@@ -1,0 +1,60 @@
+.login-background {
+  background: url('../../assets/truck-background.jpg') no-repeat center center;
+  background-size: cover;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-card {
+  background: white;
+  border-radius: 12px;
+  padding: 40px 30px;
+  width: 360px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.login-logo {
+  width: 150px;
+  margin-bottom: 30px;
+}
+
+.login-form .input-field {
+  width: 100%;
+  padding: 12px 15px;
+  margin-bottom: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border 0.3s;
+}
+
+.login-form .input-field:focus {
+  border-color: #4b6efc;
+}
+
+.btn-login {
+  width: 100%;
+  padding: 12px 0;
+  background: linear-gradient(90deg, #4b6efc, #a25dfc);
+  color: white;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.3s;
+}
+
+.btn-login:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: red;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
