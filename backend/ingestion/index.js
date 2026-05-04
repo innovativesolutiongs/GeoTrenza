@@ -98,6 +98,11 @@ AppDataSource.initialize().then(() => {
 
             console.log("📍 GPS Saved");
 
+            // DISABLED 2026-05-04 — auto engine-cut at speed > 100 is a safety risk.
+            // To be redesigned in Stage 4 with: (1) explicit operator confirmation,
+            // (2) geofence trigger, (3) speed = 0 requirement before sending
+            // immobilizer command, (4) opt-in by customer.
+            /*
             if (gps.speed > 100) {
 
               const packet = buildCommand(terminalId, COMMANDS.ENGINE_LOCK);
@@ -107,6 +112,7 @@ AppDataSource.initialize().then(() => {
               console.log("🚨 Speed Limit! Engine Lock Command Sent");
 
             }
+            */
 
 
             /* ---------- ALARM PARSE ---------- */
