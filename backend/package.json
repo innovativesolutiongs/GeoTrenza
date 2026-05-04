@@ -5,19 +5,20 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "build": "tsc",
-    "migrate": "typeorm migration:run",
-    "migration:generate": "typeorm migration:generate -n MigrationName"
+    "typeorm": "typeorm-ts-node-commonjs -d ./src/ormconfig.ts",
+    "migrate": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:generate": "npm run typeorm -- migration:generate"
   },
   "dependencies": {
     "@types/jsonwebtoken": "^9.0.10",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.17.1",
     "express-session": "^1.18.2",
     "jsonwebtoken": "^9.0.2",
     "md5": "^2.3.0",
-    "mysql": "^2.18.1",
-    "mysql2": "^3.14.4",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.1.14",
     "typeorm": "^0.3.26"
