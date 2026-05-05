@@ -408,8 +408,7 @@ SELECT t.*, d.terminal_id, d.last_seen_at
 | `id` | `bigserial` | no | auto | |
 | `account_id` | `bigint` | no | — | FK → `accounts(ID)`. Geofences belong to one customer. |
 | `name` | `text` | no | — | "Warehouse A", "Customer site Punjab", etc. |
-| `shape` | `text` | no | — | `'circle'` or `'polygon'`. Discriminator for the `geometry` JSONB. |
-| `geometry` | `jsonb` | no | — | If `shape='circle'`: `{"center_lat":..., "center_lng":..., "radius_m":...}`. If `shape='polygon'`: `{"points":[{"lat":...,"lng":...},...]}`. **If we adopt PostGIS (Q3) this becomes `geometry(POLYGON,4326)` and `shape` is no longer needed.** |
+| `geometry` | `geometry(POLYGON, 4326)` | no | — | The polygon, in PostGIS WKT/EWKB. SRID 4326 = WGS84 (lat/lng). PostGIS 3.4.2 is already installed and active in `gps_services`, so the migration uses the type directly without a `CREATE EXTENSION` call. Circles, when needed, are approximated as many-sided polygons by the dashboard before insert. The `shape` discriminator from the v1 draft is not needed. |
 | `trigger_on_enter` | `boolean` | no | `true` | Whether crossing inward fires an event. |
 | `trigger_on_exit` | `boolean` | no | `true` | Whether crossing outward fires an event. |
 | `active` | `boolean` | no | `true` | Soft-disable without deleting. |
@@ -421,7 +420,7 @@ SELECT t.*, d.terminal_id, d.last_seen_at
 | index | reasoning |
 |---|---|
 | `(account_id) WHERE active` | Geofence-watcher loads "active geofences for this customer" on every position write. |
-| GIST on `geometry` (only if PostGIS) | Spatial "which geofences contain this point?" lookup. Without PostGIS we iterate in app code. |
+| `geofences_geometry_idx` GIST on `geometry` | Spatial "which geofences contain this point?" lookup, served by `ST_Contains` in the watcher. Created via `CREATE INDEX geofences_geometry_idx ON geofences USING GIST (geometry);`. |
 
 **Foreign keys.**
 
@@ -433,11 +432,11 @@ SELECT t.*, d.terminal_id, d.last_seen_at
 
 ```sql
 -- 1. Active geofences for a customer (loaded by the geofence-watcher).
-SELECT id, shape, geometry, trigger_on_enter, trigger_on_exit
+SELECT id, geometry, trigger_on_enter, trigger_on_exit
   FROM geofences
  WHERE account_id = $1 AND active;
 
--- 2. PostGIS variant: all geofences containing a given point.
+-- 2. All geofences containing a given point (in-zone test).
 SELECT id, name
   FROM geofences
  WHERE account_id = $1
@@ -445,7 +444,7 @@ SELECT id, name
    AND ST_Contains(geometry, ST_SetSRID(ST_Point($lng, $lat), 4326));
 
 -- 3. Customer's geofence list for the management UI.
-SELECT id, name, shape, active, created_at
+SELECT id, name, active, created_at
   FROM geofences
  WHERE account_id = $1
  ORDER BY name;
@@ -469,7 +468,7 @@ These tables stay at their current shape in Stage 1. Stage 4 will harden auth-re
 
 ### `users` (login table)
 
-**Status.** Keep existing schema (`platform/backend/src/entity/User.ts`). The `customerID` column becomes a real FK target for `users.customerID → accounts.ID` in Stage 1 (if the data is consistent — needs an audit query first; flagged in Q5).
+**Status.** Keep existing schema (`platform/backend/src/entity/User.ts`). The `customerID` column becomes a real `NOT NULL` FK to `accounts(ID)` in Stage 1, after deleting the three confirmed-dirty test rows (`ID` ∈ {1, 4, 5}). See Q5 in §"Resolved design questions" and §"Migration strategy".
 
 **Stage 4 owns:** bcrypt the `password` column, drop unused fields.
 
@@ -504,39 +503,19 @@ Deprecating these tables removes ~6 tables of write churn and replaces them with
 
 ---
 
-## Open questions (decisions needed before Stage 1 implementation begins)
+## Resolved design questions
 
-**Q1. Hybrid typed/JSONB for `positions` — confirm or push back.**
-Proposal: hot fields (lat, lng, speed, heading, battery, signal, mileage) typed; long tail (`temperature`, `humidity`, `fuel_sensor`, `weight`, `accelerometer`, `iccid`, unknown TLVs) in `telemetry jsonb`.
-- *Alternative A:* all fields typed (cleaner schema, requires migration when a new TLV becomes interesting).
-- *Alternative B:* all fields JSONB (no migrations ever, but every position read needs `->>` extracts and we lose Postgres' typed-column index efficiency).
-- *Recommendation:* hybrid as proposed.
+All design questions raised during the Stage 1 review have been resolved as of **2026-05-05**. This section preserves the decision trail; the body of the document above is the authoritative spec.
 
-**Q2. Position retention.** The phase-1-scope.md said "7–30 days" — pick a number for v2. At 100 trucks reporting every 30s that's ~9M rows/month. Postgres handles it without partitioning at this scale, but the policy needs to be set.
-- *Recommendation:* 30 days for the MVP; revisit if storage cost or query latency becomes an issue.
-
-**Q3. PostGIS for geofences — yes or no.**
-- *PostGIS yes:* `geometry(POLYGON,4326)` column, GIST index, `ST_Contains` for in-zone tests. Robust at scale, well-supported by RDS Postgres (it's a one-line `CREATE EXTENSION`).
-- *PostGIS no:* JSONB `{points: [...]}`, ray-casting in app code. Simpler ops, but every position-write iterates all customer geofences in JS.
-- *Recommendation:* yes, PostGIS. The 60 minutes of operational cost is a one-time tax; the alternative ages badly the moment we hit a customer with 100+ zones.
-
-**Q4. Should `events.payload.geofence_id` be a real FK?** Currently proposed as a free field inside the `payload jsonb`. A real FK would block geofence deletion or cascade events away. Neither is great; the JSONB-only approach trades referential integrity for operational flexibility.
-- *Recommendation:* keep in `payload`, accept the dangling-reference risk; events are append-only forensic data, dangling refs are tolerable.
-
-**Q5. `users.customerID → accounts.ID` — is the existing data consistent?** Adding this FK in the Stage 1 migration will fail if any existing `users` row has a `customerID` that doesn't exist in `accounts`. Need a one-shot audit query before the migration runs.
-- Action: run `SELECT u.* FROM users u LEFT JOIN accounts a ON a.ID = u.customerID WHERE u.customerID > 0 AND a.ID IS NULL` against `gps_services` and decide whether to clean or skip the FK.
-
-**Q6. Should `devices.imei` be `UNIQUE`?** In theory IMEIs are globally unique. In practice typo'd or cloned IMEIs exist in any fleet. Constraint vs. soft-flag.
-- *Recommendation:* indexed but not `UNIQUE`. Flag duplicates in a daily data-quality check.
-
-**Q7. TimescaleDB hypertable for `positions`?** Native Postgres handles this scale, but at 1k+ trucks we'll want chunking on `recorded_at`. TimescaleDB on RDS used to be unavailable; it's now offered as RDS-compatible via the `timescaledb` extension on AWS Aurora and on some RDS editions.
-- *Recommendation:* skip in v2. If/when query latency on `positions` becomes a problem, revisit.
-
-**Q8. Cascade choices for `accounts` → `geofences` (CASCADE) vs `trucks` / `devices` (RESTRICT).** This design uses CASCADE for geofences and RESTRICT for trucks/devices. The reasoning: a deleted customer's geofences are useless (delete with them), but a deleted customer's trucks/devices may have ongoing financial or compliance implications (block deletion, force the operator to handle cleanup explicitly).
-- Confirm or invert.
-
-**Q9. `position_id` reference on `events`?** A `geofence.exit` event arguably wants to point at the position row that crossed the boundary, for forensic "show me on the map." Adding `position_id bigint NULL FK → positions(id)` to `events` is cheap. Decision: include or skip in v2?
-- *Recommendation:* include. Trivial cost, adds future flexibility.
+- **Q1 (2026-05-05) — Hybrid typed + JSONB for `positions`:** Approved as proposed. Hot fields (lat, lng, speed, heading, battery, signal, mileage) typed; long-tail TLVs (`temperature`, `humidity`, `fuel_sensor`, `weight`, `accelerometer`, `iccid`, unknowns) in `telemetry jsonb`. Considered alternatives: all-typed (clean but migration-on-every-new-TLV) and all-JSONB (no migrations but loses index efficiency); both rejected.
+- **Q2 (2026-05-05) — Position retention:** 3 months. A nightly cleanup job (`cron` or `pg_cron`) runs `DELETE FROM positions WHERE recorded_at < now() - interval '3 months';` — implemented in Stage 4. At ~9 M rows/month/100 trucks the working set stays under ~30 M rows, which native Postgres handles without partitioning. Beyond ~1000 trucks this will need partitioning by `recorded_at` or a TimescaleDB hypertable; revisit at scale.
+- **Q3 (2026-05-05) — PostGIS for geofences:** Approved. PostGIS 3.4.2 is already installed and active in `gps_services`. `geofences.geometry` is `geometry(POLYGON, 4326)`; the `shape` discriminator has been dropped. GIST index on `geometry`. In-zone tests use `ST_Contains(geometry, ST_SetSRID(ST_Point(lng, lat), 4326))`. The Stage 1 migration uses the type directly — **no `CREATE EXTENSION postgis` call needed**.
+- **Q4 (2026-05-05) — `events.payload.geofence_id` as FK:** Skipped. `geofence_id` lives in `payload jsonb` only, no FK. Events are append-only forensic data; dangling references after geofence deletion are tolerable, and a real FK would force either cascade-deletion of forensic history or blocking geofence deletion — both worse.
+- **Q5 (2026-05-05) — `users.customerID → accounts(ID)` FK:** Approved with cleanup. The audit query identified three known-dirty rows that are confirmed test data: `ID=1` (EZELDAdmin → `customerID 1466`), `ID=4` (EZ/CS/006 → 6), `ID=5` (EZ/CS/043 → 47). The Stage 1 migration deletes them (`DELETE FROM users WHERE "ID" IN (1, 4, 5);`) and then adds the FK as `NOT NULL`. See §"Migration strategy" for the exact SQL.
+- **Q6 (2026-05-05) — `devices.imei` UNIQUE:** Skipped. `imei` is indexed but not `UNIQUE`. A daily data-quality check in Stage 4 flags duplicate IMEIs for ops review — preferable to rejecting packets from cloned/typo'd IMEIs at insert time.
+- **Q7 (2026-05-05) — TimescaleDB hypertable for `positions`:** Skipped for v2. Native Postgres handles the current scale. Revisit when query latency on `positions` becomes a problem (likely at 1000+ trucks).
+- **Q8 (2026-05-05) — Cascade choices:** Approved as designed. `accounts → geofences` is `CASCADE` (geofences are useless without their owner). `accounts → trucks` and `accounts → devices` are `RESTRICT` (forces explicit cleanup of operational/financial assets).
+- **Q9 (2026-05-05) — `events.position_id` FK:** Approved. `position_id bigint NULL` on `events`, FK to `positions(id) ON DELETE SET NULL`, with a partial index `(position_id) WHERE position_id IS NOT NULL`. Events keep their forensic value when the linked position ages out under the 3-month retention sweep.
 
 ---
 
@@ -545,18 +524,32 @@ Proposal: hot fields (lat, lng, speed, heading, battery, signal, mileage) typed;
 **Approach: Option B — drop everything telemetry-side, start fresh.** Agreed in earlier discussion. Documented here for the record along with the risks.
 
 **What "Option B" means in concrete steps:**
-1. Stage 1 migration creates the new tables (`positions`, `events`, `trucks`, `geofences`) and the new `devices` shape.
-2. Stage 1 migration also renames the old tables: `gps_data → gps_data_legacy`, `gps_alarms → gps_alarms_legacy`, `gps_status → gps_status_legacy`, `gps_extra_location → gps_extra_location_legacy`, `gps_extra_data_msg → gps_extra_data_msg_legacy`, `heartbeats → heartbeats_legacy`, `devices → devices_legacy`. Renaming (not dropping) preserves the data for emergency forensics.
-3. Stage 1 does **not** redirect any code at the new tables. The ingestion still writes to `gps_data_legacy` etc. (because that's literally what it was writing to before; renaming was transparent). The new tables sit empty.
-4. Stage 2 is the cutover: ingestion is rewritten to write to `positions` / `events` / `devices`. When that ships, `*_legacy` tables stop being written.
-5. 30 days after Stage 2 deploys cleanly, the `*_legacy` tables are dropped.
+1. Stage 1 migration creates the new tables (`positions`, `events`, `trucks`, `geofences`) and the new `devices` shape. PostGIS types (`geometry(POLYGON, 4326)`) are used directly — PostGIS 3.4.2 is already installed and active in `gps_services`, so no `CREATE EXTENSION postgis` call is required.
+2. Same migration cleans up the three known-dirty `users` rows (confirmed test data — `customerID` values 1466 / 6 / 47 do not exist in `accounts`) and then adds the `customerID → accounts(ID)` FK as `NOT NULL`:
+   ```sql
+   -- Q5 cleanup: drop test rows whose customerID is not in accounts.
+   DELETE FROM users WHERE "ID" IN (1, 4, 5);
+   --   ID=1  EZELDAdmin   → 1466
+   --   ID=4  EZ/CS/006    →    6
+   --   ID=5  EZ/CS/043    →   47
+
+   ALTER TABLE users
+     ALTER COLUMN "customerID" SET NOT NULL,
+     ADD CONSTRAINT users_customerid_fkey
+       FOREIGN KEY ("customerID") REFERENCES accounts("ID") NOT VALID;
+   -- run after the migration to avoid a table-scan lock during cutover:
+   --   ALTER TABLE users VALIDATE CONSTRAINT users_customerid_fkey;
+   ```
+3. Stage 1 migration also renames the old telemetry tables: `gps_data → gps_data_legacy`, `gps_alarms → gps_alarms_legacy`, `gps_status → gps_status_legacy`, `gps_extra_location → gps_extra_location_legacy`, `gps_extra_data_msg → gps_extra_data_msg_legacy`, `heartbeats → heartbeats_legacy`, `devices → devices_legacy`. Renaming (not dropping) preserves the data for emergency forensics.
+4. Stage 1 does **not** redirect any code at the new tables. The ingestion still writes to `gps_data_legacy` etc. (because that's literally what it was writing to before; renaming was transparent). The new tables sit empty.
+5. Stage 2 is the cutover: ingestion is rewritten to write to `positions` / `events` / `devices`. When that ships, `*_legacy` tables stop being written.
+6. 30 days after Stage 2 deploys cleanly, the `*_legacy` tables are dropped.
 
 **Risks and mitigations:**
 - **Risk:** lose any historical data in `gps_data` (~however many rows have been collected since the box was deployed). *Mitigation:* the data has documented quality issues (missing sensor fields, no transition semantics in alarms/status); the kept `gps_data_legacy` table is available if we ever need to look back. We're not "losing" the data, we're just not migrating it into the new shape.
 - **Risk:** brief downtime during the Stage 1 migration's table renames and FK creation. *Mitigation:* the renames are metadata-only and instant on Postgres; the FK additions can be done with `NOT VALID` to avoid the table-scan lock, then `VALIDATE CONSTRAINT` afterwards. Stage 1 should target sub-30-second downtime.
 - **Risk:** Stage 2's ingestion refactor introduces a regression that loses live packets. *Mitigation:* Stage 2 includes a soak period on staging; production cutover happens with the old `synchronize: true` ingestion path still available as a 1-minute rollback. Documented in the Stage 2 plan when it's written.
-- **Risk:** the audit query for Q5 (`users.customerID` consistency) reveals dangling refs and we have to choose between cleaning data or skipping the FK. *Mitigation:* run the query *before* writing the migration. If dirty, the FK is added in a Stage 1.5 follow-up, not held against Stage 1's exit criteria.
-- **Risk:** PostGIS adoption (Q3) requires the `postgis` extension on the RDS instance, which on some RDS editions is not pre-installed. *Mitigation:* confirm `CREATE EXTENSION postgis` works against `gps_services` *before* the migration is written. Decision flips to JSONB if not.
+- **Risk:** because the database has no backups configured (see `architecture-current.md` Known Issue #8), a botched Stage 1 migration has no quick rollback path. *Mitigation:* take a manual `pg_dump -Fc gps_services > stage-1-pre-migration.dump` snapshot immediately before applying the migration, and copy it off the EC2. Required, not optional.
 
 **Cutover timeline (rough):** Stage 1 migration applies ~mid-Stage-1 once design is signed off. Old tables renamed but still actively written by old ingestion. Stage 2 cutover at end of Stage 2. Drop legacy 30 days later (~end of Stage 3).
 
@@ -572,13 +565,15 @@ Proposal: hot fields (lat, lng, speed, heading, battery, signal, mileage) typed;
 
 ---
 
-## Sign-off checklist
+## Sign-off (2026-05-05): all design questions resolved, ready for migration writing.
 
-Before Stage 1 implementation begins (writing the actual migrations), this design needs:
+The Stage 1 design is locked. All review items below were resolved during the 2026-05-05 review pass; see §"Resolved design questions" for the per-question decision trail.
 
-- [ ] Q1 (hybrid typed/JSONB) confirmed.
-- [ ] Q3 (PostGIS yes/no) decided. If yes, confirm `CREATE EXTENSION postgis` works on RDS `gps_services`.
-- [ ] Q5 audit query run, decision on `users.customerID` FK made.
-- [ ] Q8 cascade choices reviewed.
-- [ ] All other open questions either answered or explicitly deferred.
-- [ ] Dev confirms `allotments` is not load-bearing for any external process before we treat it as deprecated.
+- [x] Q1 — Hybrid typed/JSONB confirmed.
+- [x] Q3 — PostGIS confirmed (already installed and active in `gps_services`; no `CREATE EXTENSION` needed).
+- [x] Q5 — Audit complete. Three dirty test rows identified (`ID` ∈ {1, 4, 5}) and scheduled for deletion in the migration; `NOT NULL` FK added afterwards.
+- [x] Q8 — Cascade choices reviewed and approved.
+- [x] All other open questions resolved (Q2, Q4, Q6, Q7, Q9).
+- [ ] **Pending:** dev to confirm `allotments` is not load-bearing for any external process before Stage 2 treats it as deprecated.
+
+The next deliverable is the Stage 1 TypeORM migration that implements this schema.

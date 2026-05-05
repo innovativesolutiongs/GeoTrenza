@@ -8,31 +8,32 @@ For a code-level audit (entities, data flow, dashboard wiring, what's hardcoded 
 
 ## High-level shape
 
-A single AWS EC2 instance runs both halves of the product:
+A single AWS EC2 instance runs both halves of the product **and** the database:
 
 - The **frontend** (React/Vite dashboard) is served at `geotrenza.com`.
 - The **ingestion service** (a Node TCP server that speaks JT/T 808) listens on the same EC2 at `gps.geotrenza.com:8003` for GPS trackers in the field.
+- The **database** — PostgreSQL 16.13 with PostGIS 3.4.2 — runs **directly on the same EC2**, *not* on AWS RDS. Database name: `gps_services`. Data directory: `/var/lib/postgresql/16/main` on the EC2's 20 GB root volume (5 GB used, 15 GB free as of 2026-05-05).
 
-Both halves connect to the same database — an AWS RDS Postgres instance named **`gps_services`** in `us-east-1` (Virginia).
+There is **no AWS RDS instance** for this project. All compute, network ingestion, and persistent state are co-located on one `t2.medium` in `us-east-1`. (An earlier draft of this document mistakenly described the database as RDS-hosted; corrected 2026-05-05.)
 
 ```
-                      ┌──────────────────────────────┐
-                      │       AWS EC2 (t2.medium)    │
-                      │                              │
-   browsers ──HTTPS──▶│  geotrenza.com  (frontend)   │
-                      │       └─── HTTP ──▶ Express  │
-                      │                  (backend API)
-   G107 trackers ─TCP▶│  gps.geotrenza.com:8003      │
-   (over Airtel 4G)   │       (Node ingestion)       │
-                      │                              │
-                      └──────────────┬───────────────┘
-                                     │ pg
-                                     ▼
-                      ┌──────────────────────────────┐
-                      │  AWS RDS Postgres            │
-                      │  database: gps_services      │
-                      │  region:   us-east-1         │
-                      └──────────────────────────────┘
+                      ┌────────────────────────────────────────────────┐
+                      │         AWS EC2 (t2.medium, us-east-1)         │
+                      │                                                │
+   browsers ──HTTPS──▶│  geotrenza.com  (frontend)                     │
+                      │       └─── HTTP ──▶ Express                    │
+                      │                     (backend API)              │
+   G107 trackers ─TCP▶│  gps.geotrenza.com:8003                        │
+   (over Airtel 4G)   │       (Node ingestion)                         │
+                      │                                                │
+                      │           │ local socket                       │
+                      │           ▼                                    │
+                      │  PostgreSQL 16.13 + PostGIS 3.4.2              │
+                      │  /var/lib/postgresql/16/main                   │
+                      │  database: gps_services                        │
+                      │                                                │
+                      └────────────────────────────────────────────────┘
+                            (no AWS RDS — Postgres runs on the EC2)
 ```
 
 ---
@@ -58,9 +59,12 @@ The ingestion service and the dashboard share the same machine and the same data
 
 ## Database
 
-- **Engine:** PostgreSQL on AWS RDS.
+- **Engine:** PostgreSQL **16.13**, running **directly on the EC2** (Ubuntu 24.04). **Not AWS RDS.** There is no managed-database instance for this project.
+- **Extensions:** **PostGIS 3.4.2** installed and active in `gps_services` (used for `geofences.geometry` in the v2 schema; see `schema-v2.md`).
 - **Database name:** `gps_services`.
-- **Region:** `us-east-1` (Virginia, US East Coast). Trackers and customers are in India; this is a known latency/sovereignty issue, deferred to Stage 5.
+- **Data directory:** `/var/lib/postgresql/16/main` on the EC2's root EBS volume (20 GB total, 5 GB used, 15 GB free as of 2026-05-05).
+- **Region:** the EC2 lives in `us-east-1` (Virginia, US East Coast). Trackers and customers are in India; this is a known latency/sovereignty issue, deferred to Stage 5.
+- **Backups:** **NONE configured.** No `pg_dump` cron, no scheduled S3 dumps, no EBS snapshots. See "Known issues" #8 below — the database is one disk failure away from total data loss.
 - **Schema management today:** the ingestion service runs with `synchronize: true` (`backend/ingestion/ormconfig.js:23`), which means TypeORM auto-creates and alters tables on every startup to match its entity classes. The platform backend runs with `synchronize: false` and was supposed to use migrations — but no migration files exist. So the actual production schema is whatever the ingestion's last startup produced, plus whatever was applied manually.
 
 ### Tables in production
@@ -116,6 +120,7 @@ These are problems that exist in the system today. They are listed here to set t
 5. **Plaintext passwords in `users` and `accounts` tables.** `User.password` is `varchar(50)` with no hashing in either the controller or the entity. *Addressed in Stage 4.*
 6. **No auth middleware on API routes.** `platform/backend/src/index.ts:67-73` mounts every route group (`/api/users`, `/api/trucks`, `/api/devices`, `/api/customer`, `/api/allocation`) with no authentication check. Anyone reaching the API can call anything. *Addressed in Stage 3 (apply middleware) and Stage 4 (JWT in httpOnly cookies, helmet, rate limiting).*
 7. **`trucks` and `allocation` entities exist in code but not as tables in production** (or the table exists under a different name). The dashboard's truck and allocation features can't be functioning end-to-end against the real DB. *Addressed in Stage 1.*
+8. **NO DATABASE BACKUPS CONFIGURED.** Zero backup mechanisms exist as of 2026-05-05: no cron-based `pg_dump`, no scheduled S3 dumps, no EBS snapshots. The database is one disk failure away from total data loss. **CRITICAL Stage 4 priority.** Even before Stage 4, taking a manual `pg_dump -Fc gps_services` snapshot at each stage exit is recommended as a minimal mitigation. *Addressed in Stage 4.*
 
 ---
 
@@ -125,8 +130,6 @@ These are things the doc above could not pin down without inspecting the live in
 
 - How is the ingestion process supervised on the EC2? (pm2, systemd, nohup, screen?) Stage 4 needs to know to wire up a healthcheck and restart policy.
 - What is the web server in front of the frontend, and where does the Express backend live (port, path, reverse-proxy rules)?
-- The brief listed "11 tables" but enumerated 12. Confirm count by `\dt` in psql against `gps_services`.
-- What is the actual production state of the `trucks` and `allotments` tables? Do they exist? With what schema?
 - What does the S3 bucket(s) hold? How many buckets, what names, what ACLs?
 - Is there an existing backup / snapshot policy on the RDS instance?
 - Is the EC2 in a VPC with a security group restricting RDS access, or is RDS open to the internet?
