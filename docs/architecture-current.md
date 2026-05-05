@@ -131,7 +131,7 @@ These are things the doc above could not pin down without inspecting the live in
 - How is the ingestion process supervised on the EC2? (pm2, systemd, nohup, screen?) Stage 4 needs to know to wire up a healthcheck and restart policy.
 - What is the web server in front of the frontend, and where does the Express backend live (port, path, reverse-proxy rules)?
 - What does the S3 bucket(s) hold? How many buckets, what names, what ACLs?
-- Is there an existing backup / snapshot policy on the RDS instance?
-- Is the EC2 in a VPC with a security group restricting RDS access, or is RDS open to the internet?
+- Backup policy: NONE configured. Documented as Known Issue #8.
+- Is the EC2 in a VPC with a security group restricting database access, or is Postgres listening on all interfaces?
 - TLS termination for `geotrenza.com` — Let's Encrypt? AWS ACM via a load balancer? A self-signed cert?
 - For `gps.geotrenza.com:8003`, are inbound trackers allowed unrestricted, or is there an IP allowlist? (Likely unrestricted; trackers roam on cellular IPs.)

@@ -533,6 +533,9 @@ All design questions raised during the Stage 1 review have been resolved as of *
    --   ID=4  EZ/CS/006    →    6
    --   ID=5  EZ/CS/043    →   47
 
+   -- Pre-flight: confirm no users have NULL customerID before the SET NOT NULL.
+   SELECT count(*) FROM users WHERE "customerID" IS NULL;
+
    ALTER TABLE users
      ALTER COLUMN "customerID" SET NOT NULL,
      ADD CONSTRAINT users_customerid_fkey
@@ -540,6 +543,8 @@ All design questions raised during the Stage 1 review have been resolved as of *
    -- run after the migration to avoid a table-scan lock during cutover:
    --   ALTER TABLE users VALIDATE CONSTRAINT users_customerid_fkey;
    ```
+
+   **If the pre-flight `count(*)` returns >0, the `SET NOT NULL` step will fail.** Decide before applying the migration: (a) clean those rows too (extend the `DELETE` above), (b) make the FK nullable instead of `NOT NULL` (drop the `ALTER COLUMN ... SET NOT NULL` line), or (c) populate the NULLs with a sentinel `customerID` that exists in `accounts`. Resolve before the migration runs.
 3. Stage 1 migration also renames the old telemetry tables: `gps_data → gps_data_legacy`, `gps_alarms → gps_alarms_legacy`, `gps_status → gps_status_legacy`, `gps_extra_location → gps_extra_location_legacy`, `gps_extra_data_msg → gps_extra_data_msg_legacy`, `heartbeats → heartbeats_legacy`, `devices → devices_legacy`. Renaming (not dropping) preserves the data for emergency forensics.
 4. Stage 1 does **not** redirect any code at the new tables. The ingestion still writes to `gps_data_legacy` etc. (because that's literally what it was writing to before; renaming was transparent). The new tables sit empty.
 5. Stage 2 is the cutover: ingestion is rewritten to write to `positions` / `events` / `devices`. When that ships, `*_legacy` tables stop being written.
