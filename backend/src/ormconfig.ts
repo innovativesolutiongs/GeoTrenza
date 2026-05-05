@@ -31,6 +31,13 @@ export const AppDataSource = new DataSource({
   entities: [User, Trucks, Account, Devices, allocation],
   migrations: ["src/migration/*.ts"],
   logging: true,
+  // Schema management: synchronize is OFF. Migrations under src/migration/ are now
+  // the ONLY mechanism that changes production schema — see docs/schema-v2.md.
+  // Do NOT flip this back to true; the ingestion service's `synchronize: true` is
+  // what produced the current production drift, and Stage 2 removes that path too.
   synchronize: false,
+  // Migrations are run explicitly (e.g. via `typeorm migration:run`), not on app boot,
+  // so a deploy that forgets to run them fails loudly at first query rather than
+  // silently reshaping the schema.
   migrationsRun: false,
 });
