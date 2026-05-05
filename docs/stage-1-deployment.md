@@ -64,7 +64,7 @@ test -e /home/ubuntu/platform && \
   { echo "STOP: /home/ubuntu/platform already exists — investigate before continuing"; }
 
 # Clone. Substitute the actual repo URL; confirm with the team if unsure.
-git clone <repo-url> /home/ubuntu/platform
+git clone git@github.com:innovativesolutiongs/GeoTrenza.git /home/ubuntu/platform
 
 cd /home/ubuntu/platform
 
@@ -110,10 +110,16 @@ EOF
 chmod 600 /home/ubuntu/platform/backend/.env
 ```
 
-Substitute the real Postgres credentials. The dev who set up the box should
-know them; if not, check `/var/www/html/gps.geotrenza.com/backend/`'s
-`ormconfig.js` — the legacy ingestion connects to the same DB with the same
-credentials.
+Substitute the real Postgres credentials. Three places to find them, in
+preferred order:
+
+1. The dev who set up the box (ask first).
+2. `/home/ubuntu/platform/backend/ingestion/.env` in the cloned monorepo —
+   committed in Stage 0 Deliverable 1 when the ingestion service was moved
+   into the monorepo. Same DB host / port / user / password / name.
+3. `/var/www/html/gps.geotrenza.com/backend/`'s `ormconfig.js` on the EC2 —
+   the legacy standalone ingestion connects to the same DB with the same
+   credentials. Use this as the last-resort source-of-truth.
 
 After Stage 1, this checkout at `/home/ubuntu/platform/` stays in place.
 Stage 2 reuses it for the new ingestion service.
