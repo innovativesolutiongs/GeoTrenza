@@ -76,11 +76,10 @@ unknown_31, unknown_E1}` — note that the three `unknown_*` entries are
 real TLVs that `parseExtraMessages` handles (see Bug 5);
 `parseLocationExtra` correctly ignores them via its default branch.
 
-**Fix commit:** TBD (filled in by follow-up commit) — hardcoded `82`
-with a comment explaining the timestamp offset. The alternative
-(reading offset from the message body length header) was considered
-but rejected as overkill for a device type that always sends the same
-body layout.
+**Fix commit:** `c6040d0` — hardcoded `82` with a comment explaining
+the timestamp offset. The alternative (reading offset from the message
+body length header) was considered but rejected as overkill for a
+device type that always sends the same body layout.
 
 ---
 
