@@ -33,10 +33,10 @@ column landed as NULL even though the parser decoded a real value.
 "synthetic TLV input — verifies field names match writer reads". The
 test now asserts the post-fix names.
 
-**Fix commit:** TBD (filled in by follow-up commit) — renamed the three
-parser fields to match the writer's spelling. The new schema's
-`positions.telemetry` jsonb column uses the writer's names too, so the
-fix aligns parser/writer/schema at once.
+**Fix commit:** `64db5c3` — renamed the three parser fields to match
+the writer's spelling. The new schema's `positions.telemetry` jsonb
+column uses the writer's names too, so the fix aligns parser/writer/
+schema at once.
 
 ---
 
