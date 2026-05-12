@@ -303,7 +303,7 @@ legitimate 0 readings". Three tests: (1) precondition that
 `|| null` behavior of coercing 0 to null so the operator distinction
 is documented in-place.
 
-**Fix commit:** TBD (filled in by follow-up commit) — global
+**Fix commit:** `b7095db` — global
 `|| null` → `?? null` swap across both `extraRepo.save` and
 `extraDataRepo.save` blocks (20 occurrences). Pure operator swap; no
 parser changes, no schema changes, no handler reorganization. The
