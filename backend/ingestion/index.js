@@ -197,29 +197,25 @@ AppDataSource.initialize().then(() => {
 
 
 
+            // Bug 7 fix: dropped 4 reads (message_id, gnss_signal, humidity,
+            // raw) — no parser emits them — and case-fixed 3 (gsm_signal,
+            // battery_voltage, battery_percent → camelCase) to match
+            // parseExtraMessages's output. See STAGE_2_KNOWN_BUGS.md Bug 7.
             await extraDataRepo.save({
 
               terminal_id: terminalId,
-
-              message_id: extraMsg.message_id ?? null,
 
               mileage: extraMsg.mileage ?? null,
 
               fuel: extraMsg.fuel ?? null,
 
-              gsm_signal: extraMsg.gsm_signal ?? null,
+              gsm_signal: extraMsg.gsmSignal ?? null,
 
-              gnss_signal: extraMsg.gnss_signal ?? null,
+              battery_voltage: extraMsg.batteryVoltage ?? null,
 
-              battery_voltage: extraMsg.battery_voltage ?? null,
+              battery_percent: extraMsg.batteryPercent ?? null,
 
-              battery_percent: extraMsg.battery_percent ?? null,
-
-              temperature: extraMsg.temperature ?? null,
-
-              humidity: extraMsg.humidity ?? null,
-
-              raw_extra: extraMsg.raw ?? null
+              temperature: extraMsg.temperature ?? null
 
             });
 

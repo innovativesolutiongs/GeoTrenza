@@ -153,3 +153,98 @@ describe('writer-zero-coalesce: Bug 6 — `?? null` preserves legitimate 0 readi
     expect(preFix).toBeNull();
   });
 });
+
+describe('extraDataRepo-shape: Bug 7 — writer reads camelCase keys parseExtraMessages emits', () => {
+  // Pre-fix: extraDataRepo.save({...}) in backend/ingestion/index.js
+  // read 10 data keys from extraMsg. 7 of those reads never matched
+  // anything parseExtraMessages emits:
+  //   - 4 speculative snake_case fields (message_id, gnss_signal,
+  //     humidity, raw) — no TLV case produces these keys
+  //   - 3 case-mismatch fields (gsm_signal/battery_voltage/
+  //     battery_percent) — parser emits camelCase
+  // Post-fix: 4 speculative reads pruned, 3 case-mismatch reads flipped
+  // to camelCase. 6 working fields + terminal_id remain.
+  //
+  // Packet exercises all 6 kept fields and zero TLVs for the pruned
+  // ones (no parser case produces them regardless of input).
+  //
+  //   01 04 0000007B  → mileage = 12.3
+  //   02 04 00000050  → fuel = 80
+  //   30 01 2A        → gsmSignal = 42
+  //   51 02 00FA      → temperature = 25.0
+  //   56 01 50        → batteryPercent = 80
+  //   E1 02 0078      → batteryVoltage = 12.0
+  const hex =
+    '0'.repeat(82) +
+    '01040000007B' +    // TLV 01: mileage
+    '020400000050' +    // TLV 02: fuel
+    '30012A' +          // TLV 30: gsmSignal
+    '510200FA' +        // TLV 51: temperature
+    '560150' +          // TLV 56: batteryPercent
+    'E1020078' +        // TLV E1: batteryVoltage
+    '0000';             // trailing pad satisfies index < hex.length - 4
+
+  const extraMsg = parseExtraMessages(hex);
+
+  test('precondition: parseExtraMessages emits the 6 camelCase keys the post-fix writer reads', () => {
+    expect(extraMsg.mileage).toBe(12.3);
+    expect(extraMsg.fuel).toBe(80);
+    expect(extraMsg.gsmSignal).toBe(42);
+    expect(extraMsg.temperature).toBe(25.0);
+    expect(extraMsg.batteryPercent).toBe(80);
+    expect(extraMsg.batteryVoltage).toBe(12.0);
+  });
+
+  test('precondition: parseExtraMessages does NOT emit the 4 pruned snake_case keys', () => {
+    // Pins the speculative-column rationale: these reads were always-
+    // NULL in production because no TLV case produces them. Pruning
+    // the writer reads is safe.
+    expect(extraMsg.message_id).toBeUndefined();
+    expect(extraMsg.gnss_signal).toBeUndefined();
+    expect(extraMsg.humidity).toBeUndefined();
+    expect(extraMsg.raw).toBeUndefined();
+  });
+
+  test('post-fix writer row: 6 working fields populate; 4 pruned keys absent', () => {
+    // Mirror the post-fix shape of extraDataRepo.save in
+    // backend/ingestion/index.js. The 4 pruned columns are not in
+    // the object literal at all — not nulled, gone.
+    const writerRow = {
+      terminal_id: 'T-test',
+      mileage: extraMsg.mileage ?? null,
+      fuel: extraMsg.fuel ?? null,
+      gsm_signal: extraMsg.gsmSignal ?? null,
+      battery_voltage: extraMsg.batteryVoltage ?? null,
+      battery_percent: extraMsg.batteryPercent ?? null,
+      temperature: extraMsg.temperature ?? null,
+    };
+
+    expect(writerRow.mileage).toBe(12.3);
+    expect(writerRow.fuel).toBe(80);
+    expect(writerRow.gsm_signal).toBe(42);
+    expect(writerRow.battery_voltage).toBe(12.0);
+    expect(writerRow.battery_percent).toBe(80);
+    expect(writerRow.temperature).toBe(25.0);
+
+    // Regression guard: if a future "completeness" pass re-adds a
+    // speculative read, these fail.
+    expect(writerRow).not.toHaveProperty('message_id');
+    expect(writerRow).not.toHaveProperty('gnss_signal');
+    expect(writerRow).not.toHaveProperty('humidity');
+    expect(writerRow).not.toHaveProperty('raw_extra');
+  });
+
+  test('diagnostic: pre-fix snake_case reads were undefined → wrote NULL', () => {
+    // Documents WHY the case-flip matters. Pre-fix the writer read
+    // gsm_signal/battery_voltage/battery_percent (snake), which the
+    // parser never emits — so `?? null` collapsed them to NULL even
+    // though the TLVs decoded successfully into camelCase keys.
+    expect(extraMsg.gsm_signal ?? null).toBeNull();
+    expect(extraMsg.battery_voltage ?? null).toBeNull();
+    expect(extraMsg.battery_percent ?? null).toBeNull();
+    // Same TLVs, correct case, real values:
+    expect(extraMsg.gsmSignal ?? null).toBe(42);
+    expect(extraMsg.batteryVoltage ?? null).toBe(12.0);
+    expect(extraMsg.batteryPercent ?? null).toBe(80);
+  });
+});

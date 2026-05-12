@@ -316,7 +316,7 @@ production fix for that block lives in Bug 7.
 
 ---
 
-## Bug 7 — `parseExtraMessages` field names don't match `extraDataRepo` writer expectations  🔴
+## Bug 7 — `parseExtraMessages` field names don't match `extraDataRepo` writer expectations  🟢
 
 **File:** `backend/ingestion/index.js`, the `extraDataRepo.save({...})`
 block (lines 200–224)
@@ -356,25 +356,39 @@ production; the `||` operator is incidental for the
 extraDataRepo block (it matters for extraRepo, where all read keys
 match the parser).
 
-**Test that locks this:** Not yet. The fix commit will add a regression
-test asserting `extraMsg.gsmSignal` is read off the camelCase key (or
-asserting the column is populated for a packet whose TLVs the parser
-decodes).
+**Test that locks this:** `backend/test/integration/extras-merge.test.js`,
+describe block `extraDataRepo-shape: Bug 7 — writer reads camelCase
+keys parseExtraMessages emits`. Four tests:
+1. Precondition that `parseExtraMessages` emits the 6 camelCase keys
+   the post-fix writer reads (`mileage`, `fuel`, `gsmSignal`,
+   `temperature`, `batteryPercent`, `batteryVoltage`).
+2. Precondition that `parseExtraMessages` does NOT emit the 4 pruned
+   snake_case keys (`message_id`, `gnss_signal`, `humidity`, `raw`) —
+   pins the speculative-column rationale.
+3. Post-fix writer row shape: 6 working fields populate; `toHaveProperty`
+   regression guards confirm the 4 pruned keys are absent from the
+   `extraDataRepo.save` literal entirely.
+4. Diagnostic: documents why the case-flip matters by asserting that
+   pre-fix snake_case reads collapsed to `null` even though the TLVs
+   decoded into camelCase keys.
 
-**Planned fix commit:** TBD. Three possible shapes:
-1. Rename writer reads to camelCase (`extraMsg.gsmSignal` etc.) and
-   add TLV parsers for the genuinely-missing fields (`message_id`,
-   `gnss_signal`, `humidity`, `raw`) if those columns are wanted.
-2. Rename parser keys to snake_case (less work if no other readers
-   exist; check first).
-3. Prune the writer to only the columns the device actually populates,
-   treating the missing-TLV columns as cruft. Some of these
-   (`humidity`, `raw`, `gnss_signal`) may have been speculatively
-   added for TLVs this device never sends.
+**Fix commit:** TBD — chose option 3 (prune speculative reads) plus
+the case-rename half of option 1 (no new TLV parsers added — Stage 4
+redesigns this writer, so adding parsers for `message_id`,
+`gnss_signal`, `humidity`, `raw` would be throwaway work).
+Post-fix the writer reads 6 keys and they all match parser output.
 
-Decision deferred to the Bug 7 fix design. Stage 4 rewrites this
-writer entirely as part of the `positions`/`events` schema migration,
-so the in-place fix vs. let-Stage-4-handle-it tradeoff is on the table.
+**Stage 4 followup:** `gps_extra_messages_legacy` retains 4 columns
+no longer written by ingestion (`message_id`, `gnss_signal`,
+`humidity`, `raw_extra`). They will be NULL for every row inserted
+after this commit. Decision space for Stage 4:
+- Drop the 4 columns when the `positions`/`events` schema migration
+  runs (simplest, breaks any external readers querying them).
+- Keep them as NULL-tolerant columns indefinitely (defensive, but
+  carries dead schema forever).
+- Backfill via new TLV parsers if a real device source for any of
+  them ever surfaces (unlikely — they were speculative from the
+  start).
 
 ---
 
