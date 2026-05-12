@@ -372,7 +372,7 @@ keys parseExtraMessages emits`. Four tests:
    pre-fix snake_case reads collapsed to `null` even though the TLVs
    decoded into camelCase keys.
 
-**Fix commit:** TBD — chose option 3 (prune speculative reads) plus
+**Fix commit:** `4ddf2d9` — chose option 3 (prune speculative reads) plus
 the case-rename half of option 1 (no new TLV parsers added — Stage 4
 redesigns this writer, so adding parsers for `message_id`,
 `gnss_signal`, `humidity`, `raw` would be throwaway work).
