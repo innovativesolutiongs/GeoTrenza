@@ -190,110 +190,115 @@ SELECT "ID", "username", "customerID" FROM users WHERE "ID" IN (1, 4, 5);
 SQL
 ```
 
-### 0.5 Identify the pm2 process names
+### 0.5 Verify nothing is currently running that needs stopping
 
-We need to stop the legacy ingestion before migrating, and we need to know the
-platform-backend process name to restart it after enabling `STAGE_1_GAP_MODE`.
-**RUN `pm2 list` FIRST and substitute the actual process names** below.
+The original draft of this section assumed both the legacy ingestion and
+the platform backend were pm2-supervised. The dev confirmed on 2026-05-12
+that this is **not** the case: the legacy ingestion was run via
+`node index.js` in a foreground terminal session, pm2 was uninitialized
+on the EC2 until today's diagnostic, and no node processes are currently
+running. We still verify, because "currently running" can change between
+sessions.
 
-```bash
-pm2 list
-```
-
-You should see two relevant rows (names will vary by how pm2 was configured):
-
-- **Legacy ingestion** — likely something like `ingestion`, `gps-ingest`,
-  `geotrenza-ingestion`, or whatever was used at first start. Confirm via
-  `pm2 describe <name>` that its `cwd` is `/var/www/html/gps.geotrenza.com/backend/`.
-- **Platform backend** — Express app serving `/api/*` on port 4000. Likely
-  named `platform-backend` or similar. If it's *not* in `pm2 list`, the
-  dashboard's API endpoints are not currently being served from this EC2 —
-  flag and ask before continuing; the §1 (503 placeholder) step assumes a
-  running backend.
-
-Record the names into shell variables for the rest of this session so the
-runbook's commands are copy-pasteable:
+Two probes — both should return empty:
 
 ```bash
-export INGESTION_PM2_NAME=<actual-name-from-pm2-list>     # e.g. "ingestion"
-export BACKEND_PM2_NAME=<actual-name-from-pm2-list>       # e.g. "platform-backend"
+# Anything listening on the legacy ingestion port (JT/T 808, default 8003)?
+sudo ss -tlnp | grep 8003
+# expect: no output
+
+# Any node processes at all?
+ps aux | grep -E 'node|geotrenza' | grep -v grep
+# expect: no output
 ```
 
-If either process is running but *not* under pm2 (e.g. `nohup`, `screen`),
-find it via `ps -ef | grep -E 'node.*4000|gps.geotrenza' | grep -v grep` and
-adopt it under pm2 (`pm2 start ... && pm2 save`) **before** starting Stage 1 —
-killing nohup'd processes by PID during a migration window is a recipe for
-a confused rollback.
+If both come back empty, **skip §2 entirely** — there's nothing to stop —
+and proceed to §1 to set up the dormant 503 placeholder for Stage 2.
+
+If either probe finds something, that's a new process started since the
+dev's last status update. Stop and investigate before §2 — the runbook's
+old pm2-stop instructions no longer apply; see §2 for the foreground-node
+kill path.
 
 ---
 
-## 1. Enable the dashboard 503 placeholder
+## 1. Enable the dashboard 503 placeholder (dormant during Stage 1)
 
-The `STAGE_1_GAP_MODE=true` line is already in
-`/home/ubuntu/platform/backend/.env` from step 0.1. Restart the platform
-backend so it picks up the new env. Two cases:
+**Reality check from §0.5.** The platform backend is *not* currently
+running on this EC2 — there's no Express process bound to port 4000, no
+pm2 entry, nothing serving `/api/*` from this box. (How the legacy
+dashboard at `gps.geotrenza.com` is being served is a separate question;
+for Stage 1 cutover purposes, all we need to know is that there's no
+running backend here to swap into 503 mode.)
 
-**Case A: the platform backend is already running from `/home/ubuntu/platform/backend/`.**
-Just restart it:
+That means **the 503 middleware is dormant during Stage 1**, not active.
+There are no incoming requests to reject because there's no running
+backend to receive them. The configuration is still important — when
+Stage 2 brings a real backend up from this checkout, `STAGE_1_GAP_MODE`
+must already be set in `.env` so the first request after deploy lands on
+the 503 path until Stage 2 has wired up the new endpoints.
 
-```bash
-pm2 restart $BACKEND_PM2_NAME --update-env
-```
-
-(`--update-env` makes pm2 re-read `.env` instead of reusing the cached
-environment from the original boot.)
-
-**Case B: the platform backend is running from a different checkout** (check
-with `pm2 describe $BACKEND_PM2_NAME` — `cwd` will tell you). Pick one:
-
-- (B1) Edit *that* `.env` to add `STAGE_1_GAP_MODE=true`, then
-  `pm2 restart $BACKEND_PM2_NAME --update-env`. Simplest.
-- (B2) Stop the old one and start fresh from the new checkout:
-  ```bash
-  pm2 stop $BACKEND_PM2_NAME
-  pm2 delete $BACKEND_PM2_NAME
-  cd /home/ubuntu/platform/backend
-  pm2 start npm --name platform-backend -- run start
-  pm2 save
-  export BACKEND_PM2_NAME=platform-backend
-  ```
-  (B2) is what Stage 2 will end up doing anyway, so doing it here is fine
-  if you're comfortable.
-
-Verify the gap is active either way:
+All we do at this step is **confirm the flag is in place** so Stage 2
+inherits the right preventive posture:
 
 ```bash
-curl -i http://localhost:4000/api/trucks
-# expect: HTTP/1.1 503 Service Unavailable
-# body:   {"error":"Service temporarily unavailable during schema migration","expected_recovery":"Stage 2 deployment"}
+grep '^STAGE_1_GAP_MODE=' /home/ubuntu/platform/backend/.env
+# expect: STAGE_1_GAP_MODE=true
 ```
 
-If 200 or 404, gap mode is not active — fix before proceeding.
+If the line is missing or set to `false`, fix `.env` before continuing —
+this is the one chance to set it without a "did the deploy already wake
+the backend up?" race.
+
+No backend restart needed at this stage. No `curl` health check applies
+yet, because there's nothing answering on port 4000. The first time the
+503 actually serves a response is the first request after the Stage 2
+deploy lands — at which point the §6.4 disable procedure becomes the
+relevant counterpart.
 
 ---
 
 ## 2. Stop the legacy ingestion service
 
-**Do this before migrating, not after.** While ingestion is running with
+**If §0.5 confirmed nothing is currently running, skip this section.**
+The dev's last terminal session ended an unknown number of hours before
+Stage 1 cutover and no node processes are running on the EC2 right now;
+nothing to stop. Proceed straight to §3.
+
+Otherwise — if §0.5 found a listener on port 8003 or a stray node
+process — the most likely supervisor is a foreground terminal running
+`node index.js` from `/var/www/html/gps.geotrenza.com/backend/` (the
+legacy ingestion was never under pm2 on this EC2). Find the PID and
+kill it directly:
+
+```bash
+# Find the owner of port 8003 (rerun of the §0.5 probe, with PID extracted)
+sudo ss -tlnp | grep 8003
+# example output: LISTEN 0 511 *:8003 *:* users:(("node",pid=12345,fd=20))
+
+# Kill that PID
+sudo kill <pid>
+
+# Verify
+sudo ss -tlnp | grep 8003                            # expect: no output
+ps aux | grep -E 'node|geotrenza' | grep -v grep     # expect: no output
+```
+
+**Why direct kill rather than `pm2 stop`.** pm2 wasn't supervising the
+legacy ingestion — it was a foreground `node index.js` in someone's
+terminal. There is no pm2 entry to stop; `pm2 list` is empty on this
+EC2 until today's diagnostic. If a future operator brings ingestion
+back under pm2 between now and cutover, update this section before
+running it.
+
+**Why before migrating, not after.** While ingestion is running with
 `synchronize: true`, even a brief restart will recreate the renamed
-`gps_data` / `gps_alarms` / etc. tables (empty) and start writing to them,
-which defeats the rename.
+`gps_data` / `gps_alarms` / etc. tables (empty) and start writing to
+them, which defeats the rename.
 
-```bash
-pm2 stop $INGESTION_PM2_NAME
-```
-
-Verify it stopped:
-
-```bash
-pm2 list                                      # status column should read "stopped" for the ingestion row
-ps -ef | grep -E 'node.*gps.geotrenza' | grep -v grep
-# expect: no rows
-```
-
-Trackers will accumulate packets at the cellular layer; when ingestion comes
-back (Stage 2), they re-establish TCP and replay. Brief data gap is expected
-and acceptable for Stage 1.
+Trackers will accumulate packets at the cellular layer; when ingestion
+comes back (Stage 2), they re-establish TCP and replay. Brief data gap
+is expected and acceptable for Stage 1.
 
 ---
 
