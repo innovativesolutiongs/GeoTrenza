@@ -40,10 +40,10 @@ schema at once.
 
 ---
 
-## Bug 2 — `parseLocationExtra` hardcoded offset 70 (TLVs actually at 82)  🔴
+## Bug 2 — `parseLocationExtra` hardcoded offset 70 (TLVs actually at 82)  🟢
 
 **File:** `backend/ingestion/utils/locationExtraParser.js`, line 7
-(`let start = 70`)
+(`let start = 82` after the fix)
 
 **Expected behavior:** TLV extras in a JT/T 808 0x0200 location-report
 packet begin **after** the BCD timestamp field. Packet body layout:
@@ -63,21 +63,24 @@ packet begin **after** the BCD timestamp field. Packet body layout:
 
 The parser should read TLVs starting at offset **82**, not 70.
 
-**Current behavior:** Parser hardcodes `start = 70`, so it eats 12
-characters of BCD timestamp bytes as TLV id+length pairs and emits
-`unknown_XX` keys for them. The real TLVs that come after are
-*sometimes* recovered correctly (if the misread byte count happens to
-align) and *sometimes* lost (if alignment shifts).
+**Pre-fix behavior:** Parser hardcoded `start = 70`, so it ate 12
+characters of BCD timestamp bytes as TLV id+length pairs and emitted
+`unknown_XX` keys for them. The real TLVs that came after were
+*sometimes* recovered correctly (if the misread byte count happened to
+align) and *sometimes* lost (if alignment shifted).
 
 **Test that locks this:** `backend/test/parsers/locationExtra.test.js`,
-"Bug 2: deviceSimulator packet #3 — locks offset-70 garbage output".
-Test asserts the current `{unknown_23, unknown_00, unknown_30, unknown_31,
-unknown_E1}` output from a real production-shaped packet.
+"deviceSimulator packet #3 — verifies post-fix TLV decoding from offset
+82". Test asserts the post-fix output `{mileage: 0, unknown_30,
+unknown_31, unknown_E1}` — note that the three `unknown_*` entries are
+real TLVs that `parseExtraMessages` handles (see Bug 5);
+`parseLocationExtra` correctly ignores them via its default branch.
 
-**Planned fix commit:** TBD — read offset from the message body length
-header rather than hardcoding. Or, more conservative: hardcode `82` and
-add a comment explaining the timestamp offset. The second approach is
-safer if the body always has the same layout for this device type.
+**Fix commit:** TBD (filled in by follow-up commit) — hardcoded `82`
+with a comment explaining the timestamp offset. The alternative
+(reading offset from the message body length header) was considered
+but rejected as overkill for a device type that always sends the same
+body layout.
 
 ---
 

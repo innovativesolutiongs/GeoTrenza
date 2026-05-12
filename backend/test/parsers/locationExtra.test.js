@@ -2,32 +2,28 @@
  * Regression test for the JT/T 808 TLV-extras parser used by the 0x0200
  * location-report handler.
  *
- * **ONE LOCKED BUG** — Bug 2 (offset-70) in STAGE_2_KNOWN_BUGS.md.
- * Bug 1 (field-name mismatch) was fixed in the preceding commit; the
- * "synthetic TLV input" test below now verifies that the parser's
- * field names match what the writer in ingestion/index.js reads.
+ * **Bug 1 (field-name mismatch) and Bug 2 (offset-70 hardcoded start)
+ * are both fixed.** The tests below now verify post-fix behavior, not
+ * locked bugs.
  *
- * Bug 2 — Hardcoded TLV start at offset 70.
- *   parseLocationExtra begins TLV reading at hex offset 70. In a real
- *   JT/T 808 0x0200 packet, offset 70 is the start of the 6-byte BCD
- *   timestamp (YYMMDDHHMMSS); the actual TLVs begin at offset 82. So in
- *   production, parseLocationExtra interprets the timestamp bytes as
- *   TLV id+length pairs and emits a soup of "unknown_XX" keys. Locked
- *   by the "deviceSimulator packet #3" test below.
- *
- * The Bug 2 test below doesn't bless the bug — it locks the current
- * baseline so the fix commit can update the test alongside the parser
- * change.
+ * Note: the packet #3 test still shows `unknown_30`/`unknown_31`/
+ * `unknown_E1` keys. These are real TLVs (gsmSignal/satellites/
+ * batteryVoltage) that belong to parseExtraMessages' decode set, not
+ * parseLocationExtra's. This is the dual-parser overlap problem
+ * (Bug 5 in STAGE_2_KNOWN_BUGS.md), not a bug in this parser. The
+ * Bug 5 fix will consolidate both parsers so all real TLVs reach the
+ * writer regardless of which parser owns the ID.
  */
 const parseLocationExtra = require('../../ingestion/utils/locationExtraParser');
 
 describe('parseLocationExtra (JT/T 808 0x0200 TLV-extras parser)', () => {
   test('synthetic TLV input — verifies field names match writer reads', () => {
-    // Synthesized hex: 70 chars of zero-filler + TLV records for IDs 01–06
+    // Synthesized hex: 82 chars of zero-filler + TLV records for IDs 01–06
     // plus one unknown ID 99. The zero-filler matches the parser's
-    // offset-70 assumption, so this test exercises pure TLV decoding,
-    // isolated from the offset-70 bug (which is locked in the next test).
-    const prefix = '0'.repeat(70);
+    // post-fix offset-82 assumption (after Bug 2 was fixed). This test
+    // exercises pure TLV decoding against a clean input — the packet #3
+    // test below exercises real-packet decoding.
+    const prefix = '0'.repeat(82);
     const tlv =
       '01040000006402020050' +  // mileage=10, fuel=80
       '0302003C04011B' +        // speedExtra=60, signalStrength=27
@@ -43,13 +39,14 @@ describe('parseLocationExtra (JT/T 808 0x0200 TLV-extras parser)', () => {
      *
      * | Offset | ID | Len | ValueHex   | Field name (parser)  | Decoded                  |
      * |--------|----|-----|------------|----------------------|--------------------------|
-     * | 70     | 01 | 04  | "00000064" | mileage              | parseInt/10 = 100/10 = 10|
-     * | 82     | 02 | 02  | "0050"     | fuel                 | parseInt = 80            |
-     * | 90     | 03 | 02  | "003C"     | extendedSpeed        | parseInt = 60            |
-     * | 98     | 04 | 01  | "1B"       | gsmSignal            | parseInt = 27            |
-     * | 104    | 05 | 01  | "07"       | satellites           | parseInt = 7             |
-     * | 110    | 06 | 02  | "0FA0"     | batteryVoltage       | parseInt = 4000          |
-     * | 118    | 99 | 02  | "DEAD"     | unknown_99 (default) | raw hex "DEAD"           |
+     * | 82     | 01 | 04  | "00000064" | mileage              | parseInt/10 = 100/10 = 10|
+     * | 94     | 02 | 02  | "0050"     | fuel                 | parseInt = 80            |
+     * | 102    | 03 | 02  | "003C"     | extendedSpeed        | parseInt = 60            |
+     * | 110    | 04 | 01  | "1B"       | gsmSignal            | parseInt = 27            |
+     * | 116    | 05 | 01  | "07"       | satellites           | parseInt = 7             |
+     * | 122    | 06 | 02  | "0FA0"     | batteryVoltage       | parseInt = 4000          |
+     * | 130    | 99 | 02  | "DEAD"     | unknown_99 (default) | raw hex "DEAD"           |
+     * | 138    | —  | —   | —          | —                    | loop exits (138 < 134 false) |
      *
      * Field names match the writer's reads in ingestion/index.js after the
      * Bug 1 fix. Previously these were `speedExtra`/`signalStrength`/
@@ -67,40 +64,41 @@ describe('parseLocationExtra (JT/T 808 0x0200 TLV-extras parser)', () => {
     });
   });
 
-  test('Bug 2: deviceSimulator packet #3 — locks offset-70 garbage output', () => {
+  test('deviceSimulator packet #3 — verifies post-fix TLV decoding from offset 82', () => {
     // Real JT/T 808 0x0200 packet from backend/ingestion/deviceSimulator.js.
-    // In this packet, offset 70 is the 6-byte BCD timestamp "230619160840"
-    // (2023-06-19 16:08:40); real TLVs start at offset 82. Because the
-    // parser hardcodes offset 70, it eats the timestamp bytes as if they
-    // were TLV id+length pairs. The output below is the resulting garbage
-    // — five "unknown_XX" entries, no real telemetry recovered. The fix
-    // commit (Bug 2 in STAGE_2_KNOWN_BUGS.md) will replace this with
-    // proper offset detection; this test then updates to expect the
-    // correctly-decoded fields.
+    // After the Bug 2 fix, the parser starts at offset 82 — skipping
+    // the 6-byte BCD timestamp at offsets 70–81 — and correctly decodes
+    // the first real TLV (mileage). Three subsequent TLVs in this packet
+    // (IDs 30, 31, E1) are valid JT/T 808 TLVs but parseLocationExtra
+    // does not recognize them; they fall through to the default branch
+    // as unknown_*. parseExtraMessages, which runs over the same hex
+    // region, does recognize these IDs — that's the Bug 5 (dual-parser
+    // overlap) problem the writer needs to consolidate.
     const hex = '7E0200002C690106149138000D0000010000000003015A941F06CF58F6002600000000230619160840010400000000300119310116E102012A567E';
 
     const result = parseLocationExtra(hex);
 
     /**
-     * Expected-values derivation — iteration trace through the parser.
+     * Expected-values derivation — iteration trace through the parser,
+     * starting at the post-fix offset 82.
      *
-     * | Offset | id   | len | Reads from real packet         | Stored as           |
-     * |--------|------|-----|--------------------------------|---------------------|
-     * | 70     | "23" | 06  | timestamp bytes "191608400104" | unknown_23          |
-     * | 86     | "00" | 00  | (empty, length=0)              | unknown_00 = ""     |
-     * | 90     | "00" | 00  | (empty, length=0, overwrites)  | unknown_00 = ""     |
-     * | 94     | "30" | 01  | "19"                           | unknown_30 = "19"   |
-     * | 100    | "31" | 01  | "16"                           | unknown_31 = "16"   |
-     * | 106    | "E1" | 02  | "012A"                         | unknown_E1 = "012A" |
-     * | 114    | —    | —   | loop exits (114 < 118-4 false)                       |
+     * | Offset | id   | len | ValueHex   | Field name (parser)  | Decoded                      |
+     * |--------|------|-----|------------|----------------------|------------------------------|
+     * | 82     | "01" | 04  | "00000000" | mileage              | parseInt/10 = 0 / 10 = 0     |
+     * | 94     | "30" | 01  | "19"       | unknown_30 (default) | raw hex "19"  (Bug 5)        |
+     * | 100    | "31" | 01  | "16"       | unknown_31 (default) | raw hex "16"  (Bug 5)        |
+     * | 106    | "E1" | 02  | "012A"     | unknown_E1 (default) | raw hex "012A" (Bug 5)       |
+     * | 114    | —    | —   | —          | —                    | loop exits (114 < 114 false) |
      *
-     * Note: every key starts with "unknown_". Real packet TLVs at offset 82
-     * (mileage, gsmSignal, satellites, etc.) are NEVER decoded because
-     * the parser reads the wrong region of the packet.
+     * The three `unknown_*` entries map to real telemetry that
+     * parseExtraMessages handles (gsmSignal=25, satellites=22,
+     * batteryVoltage=29.8 respectively). The writer in
+     * ingestion/index.js currently reads from `extras` (this parser's
+     * output) for those fields and so gets `undefined` — see Bug 5 in
+     * STAGE_2_KNOWN_BUGS.md.
      */
     expect(result).toEqual({
-      unknown_23: '191608400104',
-      unknown_00: '',
+      mileage: 0,
       unknown_30: '19',
       unknown_31: '16',
       unknown_E1: '012A',
