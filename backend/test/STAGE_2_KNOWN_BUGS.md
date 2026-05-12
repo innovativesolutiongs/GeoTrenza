@@ -83,34 +83,39 @@ device type that always sends the same body layout.
 
 ---
 
-## Bug 3 — `parseExtraMessages` same offset-70 bug as Bug 2  🔴
+## Bug 3 — `parseExtraMessages` same offset-70 bug as Bug 2  🟢
 
 **File:** `backend/ingestion/utils/extraMessageParser.js`, line 4
-(`let index = 70`)
+(`let index = 82` after the fix)
 
 **Expected behavior:** Same as Bug 2 — TLVs begin at offset 82, after
 the BCD timestamp.
 
-**Current behavior:** Same code-level bug as Bug 2, listed separately
-because it's a separate file that needs its own fix. With the
-deviceSimulator's packet #3, the misread is *partial*: the 12-char
-timestamp misread happens to consume exactly the same number of bytes
-as the real first TLV (mileage), so subsequent iterations realign with
-the remaining real TLVs. `gsmSignal`, `satellites`, `batteryVoltage`
-decode correctly *despite the bug*; `mileage` is lost and `unknown_23` +
-`unknown_00` appear as parsing artifacts.
+**Pre-fix behavior:** Same code-level bug as Bug 2, in a separate
+file. With the deviceSimulator's packet #3, the misread was *partial*:
+the 12-char timestamp misread happened to consume exactly the same
+number of bytes as the real first TLV (mileage), so subsequent
+iterations realigned with the remaining real TLVs. `gsmSignal`,
+`satellites`, `batteryVoltage` decoded correctly *despite the bug*;
+`mileage` was lost and `unknown_23` + `unknown_00` appeared as parsing
+artifacts.
 
-This partial-correctness is the likely reason no one noticed Bug 2 / Bug
-3 in production — most fields reached the dashboard. Anyone diagnosing
-"why is mileage always zero?" would have hit it.
+This partial-correctness was the likely reason no one noticed Bug 2 /
+Bug 3 in production — most fields reached the dashboard. Anyone
+diagnosing "why is mileage always zero?" would have hit it.
 
 **Test that locks this:** `backend/test/parsers/extraMessages.test.js`,
-"Bug 3: deviceSimulator packet #3 — locks offset-70 partial-garbage
-output".
+"deviceSimulator packet #3 — verifies post-fix TLV decoding from
+offset 82". Test asserts the post-fix output `{mileage: 0,
+gsmSignal: 25, satellites: 22, batteryVoltage: 29.8}` — note zero
+`unknown_*` entries because parseExtraMessages' case list happens to
+cover every TLV ID in this specific packet; see the test's file-level
+docstring for the asymmetry vs. parseLocationExtra. Bug 5 still
+manifests for both parsers regardless.
 
-**Planned fix commit:** TBD — same approach as Bug 2. Both parsers can
-land in the same commit since they share the root cause; the tests for
-both will need to be updated together.
+**Fix commit:** TBD (filled in by follow-up commit) — same approach as
+Bug 2: hardcoded `82` with an explanatory comment. Landed as a
+separate commit from Bug 2 to keep each parser fix self-contained.
 
 ---
 

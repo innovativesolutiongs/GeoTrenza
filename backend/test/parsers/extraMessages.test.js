@@ -4,37 +4,39 @@
  * parser runs over the same hex region as parseLocationExtra and produces
  * an overlapping but more permissive set of decoded fields. Both parsers
  * being called over the same bytes is one of the items the Stage 2
- * ingestion rewrite needs to reconcile.
+ * ingestion rewrite needs to reconcile (Bug 5 in STAGE_2_KNOWN_BUGS.md).
  *
- * **ONE LOCKED BUG** — tracked as Bug 3 in STAGE_2_KNOWN_BUGS.md.
- * parseExtraMessages has the same offset-70 hardcoded-start as
- * parseLocationExtra (Bug 2). It's a separate entry in the bug list
- * because it's a separate code site that needs its own fix commit.
+ * **Bug 3 (offset-70 hardcoded start) is fixed.** The tests below now
+ * verify post-fix behavior, not a locked bug.
  *
- * Two tests below. The first uses a synthesized input to isolate the
- * correct TLV-decoding logic (offset matches assumption). The second
- * uses a real packet to lock the offset-70 *partial-garbage* output —
- * "partial" because byte-counting coincidences mean gsmSignal,
- * satellites, and batteryVoltage are recovered correctly despite the
- * bug, while mileage is lost. That partial-correctness is probably
- * why no one noticed the bug in production.
- *
- * Neither test blesses the bug — both lock the current baseline so the
- * fix commit can update the test alongside the parser change.
+ * Asymmetry worth flagging: on deviceSimulator packet #3, post-fix
+ * parseExtraMessages produces zero `unknown_*` entries because its
+ * case list happens to cover every TLV ID the packet contains (01, 30,
+ * 31, E1). Its sibling parseLocationExtra on the same packet produces
+ * three `unknown_*` entries because its narrower case list (01-06)
+ * doesn't recognize 30/31/E1. This is NOT because parseExtraMessages
+ * has fewer bugs than parseLocationExtra — both parsers are subject to
+ * the dual-parser overlap problem (Bug 5). The asymmetry just means
+ * the overlap manifests less visibly for this parser on this specific
+ * test packet. A future packet containing an ID parseExtraMessages
+ * doesn't handle (e.g. a custom TLV from a different firmware) would
+ * surface the same overlap as `unknown_*` entries here too.
  */
 const parseExtraMessages = require('../../ingestion/utils/extraMessageParser');
 
 describe('parseExtraMessages (JT/T 808 0x0200 extended-TLV parser)', () => {
-  test('synthetic TLV input — locks current field shapes', () => {
-    // Synthesized hex: 70 chars of zero-filler + TLV records exercising
+  test('synthetic TLV input — verifies current field shapes', () => {
+    // Synthesized hex: 82 chars of zero-filler + TLV records exercising
     // a representative set of the parser's known IDs (01, 02, 04, 30,
-    // 31, 56, E1, E2, F9) plus one unknown (AA). The selection covers:
+    // 31, 56, E1, E2, F9) plus one unknown (AA). The zero-filler
+    // matches the parser's post-fix offset-82 assumption (after Bug 3
+    // was fixed). The selection covers:
     //   - parseInt-with-divisor (mileage /10, batteryVoltage /10)
     //   - raw parseInt (fuel, gsmSignal, satellites, batteryPercent)
     //   - raw hex string preserved (batteryStatus, iccid)
     //   - F9-overwrites-56 quirk (both write batteryPercent; F9 wins)
     //   - default branch ("unknown_AA")
-    const prefix = '0'.repeat(70);
+    const prefix = '0'.repeat(82);
     const tlv =
       '0104000003E8' +         // id=01, len=4, value=000003E8     → mileage=100
       '02020064' +             // id=02, len=2, value=0064         → fuel=100
@@ -55,17 +57,17 @@ describe('parseExtraMessages (JT/T 808 0x0200 extended-TLV parser)', () => {
      *
      * | Offset | ID | Len | ValueHex     | Field name        | Decoded                            |
      * |--------|----|-----|--------------|-------------------|------------------------------------|
-     * | 70     | 01 | 04  | "000003E8"   | mileage           | parseInt/10 = 1000/10 = 100        |
-     * | 82     | 02 | 02  | "0064"       | fuel              | parseInt = 100                     |
-     * | 90     | 04 | 02  | "4F4B"       | batteryStatus     | raw hex "4F4B" (not parseInt)      |
-     * | 98     | 30 | 01  | "14"         | gsmSignal         | parseInt = 20                      |
-     * | 104    | 31 | 01  | "09"         | satellites        | parseInt = 9                       |
-     * | 110    | 56 | 01  | "55"         | batteryPercent    | parseInt = 85 (overwritten by F9)  |
-     * | 116    | E1 | 02  | "0078"       | batteryVoltage    | parseInt/10 = 120/10 = 12          |
-     * | 124    | E2 | 05  | "12345ABCDE" | iccid             | raw hex "12345ABCDE" (not parseInt)|
-     * | 138    | F9 | 01  | "5A"         | batteryPercent ⚠️ | parseInt = 90 (overwrites 85)      |
-     * | 144    | AA | 02  | "BEEF"       | unknown_AA        | raw hex "BEEF"                     |
-     * | 152    | —  | —   | —            | —                 | loop exits (152 < 148 false)       |
+     * | 82     | 01 | 04  | "000003E8"   | mileage           | parseInt/10 = 1000/10 = 100        |
+     * | 94     | 02 | 02  | "0064"       | fuel              | parseInt = 100                     |
+     * | 102    | 04 | 02  | "4F4B"       | batteryStatus     | raw hex "4F4B" (not parseInt)      |
+     * | 110    | 30 | 01  | "14"         | gsmSignal         | parseInt = 20                      |
+     * | 116    | 31 | 01  | "09"         | satellites        | parseInt = 9                       |
+     * | 122    | 56 | 01  | "55"         | batteryPercent    | parseInt = 85 (overwritten by F9)  |
+     * | 128    | E1 | 02  | "0078"       | batteryVoltage    | parseInt/10 = 120/10 = 12          |
+     * | 136    | E2 | 05  | "12345ABCDE" | iccid             | raw hex "12345ABCDE" (not parseInt)|
+     * | 150    | F9 | 01  | "5A"         | batteryPercent ⚠️ | parseInt = 90 (overwrites 85)      |
+     * | 156    | AA | 02  | "BEEF"       | unknown_AA        | raw hex "BEEF"                     |
+     * | 164    | —  | —   | —            | —                 | loop exits (164 < 160 false)       |
      *
      * ⚠️ = F9 and 56 both write the same key `batteryPercent`. F9 runs
      * later in iteration order so its value (90) is what ends up in the
@@ -85,53 +87,39 @@ describe('parseExtraMessages (JT/T 808 0x0200 extended-TLV parser)', () => {
     });
   });
 
-  test('Bug 3: deviceSimulator packet #3 — locks offset-70 partial-garbage output', () => {
+  test('deviceSimulator packet #3 — verifies post-fix TLV decoding from offset 82', () => {
     // Real JT/T 808 0x0200 packet from backend/ingestion/deviceSimulator.js.
-    // Same offset-70 hardcoded-start bug as parseLocationExtra (locked
-    // in locationExtra.test.js Bug 2; tracked here as Bug 3 because
-    // it's a separate code site even though the root cause is identical).
+    // After the Bug 3 fix, the parser starts at offset 82 — skipping
+    // the 6-byte BCD timestamp at offsets 70-81 — and correctly decodes
+    // all four real TLVs in this packet (mileage, gsmSignal,
+    // satellites, batteryVoltage). Pre-fix, mileage was lost (the
+    // misread of the timestamp consumed those bytes as unknown_23) and
+    // unknown_00 appeared as a parsing artifact; the other three values
+    // happened to be decoded correctly by byte-counting coincidence.
     //
-    // Crucially, parseExtraMessages' output on this packet is *partially*
-    // correct by coincidence:
-    //   - The 12-byte misread of the timestamp ("230619160840"...) eats
-    //     exactly the same number of bytes as the real first TLV would
-    //     (mileage, id=01, len=04, value=00000000 — 6 bytes = 12 hex
-    //     chars).
-    //   - So iterations after the misread happen to land on real TLV
-    //     boundaries. gsmSignal, satellites, batteryVoltage are decoded
-    //     CORRECTLY despite the bug.
-    //   - Only mileage is lost (replaced by unknown_23) plus unknown_00
-    //     appears as a parsing artifact of two zero-length default reads.
-    //
-    // This partial-correctness is likely why no one noticed the bug —
-    // most of the data reaches the dashboard intact. The fix commit will
-    // replace this with proper offset detection; the test then updates
-    // to expect mileage=0 instead of the unknown_23/unknown_00 pair.
+    // Post-fix, no `unknown_*` entries appear in this output — but see
+    // the file-level docstring for why that's specific to this packet
+    // and not a general property of the parser (Bug 5 is still active;
+    // a different packet with TLV IDs outside this parser's case list
+    // would still leak `unknown_*` through here too).
     const hex = '7E0200002C690106149138000D0000010000000003015A941F06CF58F6002600000000230619160840010400000000300119310116E102012A567E';
 
     const result = parseExtraMessages(hex);
 
     /**
-     * Expected-values derivation — iteration trace through the parser.
-     * Iterations 4–6 read from offsets that coincidentally match real
-     * TLV boundaries (94, 100, 106) — see the note above.
+     * Expected-values derivation — iteration trace through the parser,
+     * starting at the post-fix offset 82.
      *
-     * | Offset | id   | len | Reads from real packet         | Stored as              |
-     * |--------|------|-----|--------------------------------|------------------------|
-     * | 70     | "23" | 06  | timestamp bytes "191608400104" | unknown_23             |
-     * | 86     | "00" | 00  | (empty, length=0)              | unknown_00 = ""        |
-     * | 90     | "00" | 00  | (empty, length=0, overwrites)  | unknown_00 = ""        |
-     * | 94     | "30" | 01  | "19" (real gsmSignal TLV)      | gsmSignal = 25         |
-     * | 100    | "31" | 01  | "16" (real satellites TLV)     | satellites = 22        |
-     * | 106    | "E1" | 02  | "012A" (real batteryVoltage)   | batteryVoltage = 29.8  |
-     * | 114    | —    | —   | loop exits (114 < 118-4 false)                          |
-     *
-     * The real mileage TLV at offset 82 (id=01, len=04, value=00000000)
-     * is consumed inside the unknown_23 misread region and lost.
+     * | Offset | id   | len | ValueHex   | Field name (parser) | Decoded                       |
+     * |--------|------|-----|------------|---------------------|-------------------------------|
+     * | 82     | "01" | 04  | "00000000" | mileage             | parseInt/10 = 0 / 10 = 0      |
+     * | 94     | "30" | 01  | "19"       | gsmSignal           | parseInt = 25                 |
+     * | 100    | "31" | 01  | "16"       | satellites          | parseInt = 22                 |
+     * | 106    | "E1" | 02  | "012A"     | batteryVoltage      | parseInt/10 = 298 / 10 = 29.8 |
+     * | 114    | —    | —   | —          | —                   | loop exits (114 < 114 false)  |
      */
     expect(result).toEqual({
-      unknown_23: '191608400104',
-      unknown_00: '',
+      mileage: 0,
       gsmSignal: 25,
       satellites: 22,
       batteryVoltage: 29.8,

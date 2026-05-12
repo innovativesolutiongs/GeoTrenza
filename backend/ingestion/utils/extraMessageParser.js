@@ -1,7 +1,11 @@
 function parseExtraMessages(hex) {
 
   const extras = {};
-  let index = 70; // start after main GPS fields
+  // TLVs begin at offset 82 in a JT/T 808 0x0200 packet, after the
+  // 6-byte BCD timestamp (YYMMDDHHMMSS) at offsets 70-81. See
+  // backend/test/STAGE_2_KNOWN_BUGS.md Bug 3 for the body-layout
+  // table and rationale.
+  let index = 82;
 
   try {
 
