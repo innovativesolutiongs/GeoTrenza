@@ -310,6 +310,68 @@ preserving `0` writes for fields whose parser DID emit zero.
 
 ---
 
+## Bug 7 — `parseExtraMessages` field names don't match `extraDataRepo` writer expectations  🔴
+
+**File:** `backend/ingestion/index.js`, the `extraDataRepo.save({...})`
+block (lines 200–224)
+
+**Expected behavior:** Same shape as Bug 1, but for the second writer
+block. The writer's `extraMsg.X` reads should reference keys that
+`parseExtraMessages` actually emits.
+
+**Pre-fix behavior:** The writer reads 7 keys that `parseExtraMessages`
+never emits — either case-mismatched (parser is camelCase, writer is
+snake_case) or referencing a TLV the parser doesn't implement at all:
+
+| Writer reads (`extraDataRepo`) | Parser emits | Mismatch type |
+|---|---|---|
+| `extraMsg.message_id`     | (nothing)         | Never emitted |
+| `extraMsg.gsm_signal`     | `gsmSignal`       | Case mismatch |
+| `extraMsg.gnss_signal`    | (nothing)         | Never emitted (no GNSS TLV) |
+| `extraMsg.battery_voltage`| `batteryVoltage`  | Case mismatch |
+| `extraMsg.battery_percent`| `batteryPercent`  | Case mismatch |
+| `extraMsg.humidity`       | (nothing)         | Never emitted (no humidity TLV) |
+| `extraMsg.raw`            | (nothing)         | Never emitted |
+
+3 of 10 fields work correctly: `mileage`, `fuel`, `temperature` — they
+match the parser's camelCase output because the names are all-lowercase
+to begin with.
+
+**Production impact:** The `gps_extra_messages_legacy` table has 7
+always-NULL columns regardless of what the device sends. Same root
+cause as Bug 1, separate writer block, separate columns.
+
+**Discovery context:** Found during the Bug 6 audit. The Bug 6 fix
+(`|| null` → `?? null`) is a no-op for these 7 fields because
+`undefined ?? null` and `undefined || null` both → `null` — the
+operator change is correct but doesn't surface the underlying read-key
+problem. This bug is the actual reason 7 of those columns are NULL in
+production; the `||` operator is incidental for the
+extraDataRepo block (it matters for extraRepo, where all read keys
+match the parser).
+
+**Test that locks this:** Not yet. The fix commit will add a regression
+test asserting `extraMsg.gsmSignal` is read off the camelCase key (or
+asserting the column is populated for a packet whose TLVs the parser
+decodes).
+
+**Planned fix commit:** TBD. Three possible shapes:
+1. Rename writer reads to camelCase (`extraMsg.gsmSignal` etc.) and
+   add TLV parsers for the genuinely-missing fields (`message_id`,
+   `gnss_signal`, `humidity`, `raw`) if those columns are wanted.
+2. Rename parser keys to snake_case (less work if no other readers
+   exist; check first).
+3. Prune the writer to only the columns the device actually populates,
+   treating the missing-TLV columns as cruft. Some of these
+   (`humidity`, `raw`, `gnss_signal`) may have been speculatively
+   added for TLVs this device never sends.
+
+Decision deferred to the Bug 7 fix design. Stage 4 rewrites this
+writer entirely as part of the `positions`/`events` schema migration,
+so the in-place fix vs. let-Stage-4-handle-it tradeoff is on the table.
+
+---
+
 ## Bugs not yet tracked
 
 The remaining known issue from `docs/current-state.md` that is NOT in
