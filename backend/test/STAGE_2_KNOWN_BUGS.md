@@ -113,9 +113,9 @@ cover every TLV ID in this specific packet; see the test's file-level
 docstring for the asymmetry vs. parseLocationExtra. Bug 5 still
 manifests for both parsers regardless.
 
-**Fix commit:** TBD (filled in by follow-up commit) — same approach as
-Bug 2: hardcoded `82` with an explanatory comment. Landed as a
-separate commit from Bug 2 to keep each parser fix self-contained.
+**Fix commit:** `5b04088` — same approach as Bug 2: hardcoded `82`
+with an explanatory comment. Landed as a separate commit from Bug 2
+to keep each parser fix self-contained.
 
 ---
 
