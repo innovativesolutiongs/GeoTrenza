@@ -2,17 +2,10 @@
  * Regression test for the JT/T 808 TLV-extras parser used by the 0x0200
  * location-report handler.
  *
- * **TWO LOCKED BUGS** — both tracked in STAGE_2_KNOWN_BUGS.md, scheduled
- * for separate fix commits later in Stage 2. The tests below lock current
- * behavior so the fixes are provably intentional, not silent drift.
- *
- * Bug 1 — Field-name mismatch (silent data drop).
- *   parseLocationExtra returns fields named `signalStrength`, `battery`,
- *   `speedExtra`. The writer in ingestion/index.js reads `gsmSignal`,
- *   `batteryVoltage`, `extendedSpeed`. The column names in the legacy
- *   schema match the WRITER's spelling, so these values silently land
- *   as NULL in the database even though the parser decoded them
- *   correctly. Locked by the "synthetic TLV input" test below.
+ * **ONE LOCKED BUG** — Bug 2 (offset-70) in STAGE_2_KNOWN_BUGS.md.
+ * Bug 1 (field-name mismatch) was fixed in the preceding commit; the
+ * "synthetic TLV input" test below now verifies that the parser's
+ * field names match what the writer in ingestion/index.js reads.
  *
  * Bug 2 — Hardcoded TLV start at offset 70.
  *   parseLocationExtra begins TLV reading at hex offset 70. In a real
@@ -22,17 +15,18 @@
  *   TLV id+length pairs and emits a soup of "unknown_XX" keys. Locked
  *   by the "deviceSimulator packet #3" test below.
  *
- * Neither test blesses the bug — both lock the current baseline so the
- * fix commit can update the test alongside the parser change.
+ * The Bug 2 test below doesn't bless the bug — it locks the current
+ * baseline so the fix commit can update the test alongside the parser
+ * change.
  */
 const parseLocationExtra = require('../../ingestion/utils/locationExtraParser');
 
 describe('parseLocationExtra (JT/T 808 0x0200 TLV-extras parser)', () => {
-  test('Bug 1: synthetic TLV input — locks buggy field names', () => {
+  test('synthetic TLV input — verifies field names match writer reads', () => {
     // Synthesized hex: 70 chars of zero-filler + TLV records for IDs 01–06
     // plus one unknown ID 99. The zero-filler matches the parser's
-    // offset-70 assumption, so this test isolates the field-name bug
-    // from the offset-70 bug (which is locked in the next test).
+    // offset-70 assumption, so this test exercises pure TLV decoding,
+    // isolated from the offset-70 bug (which is locked in the next test).
     const prefix = '0'.repeat(70);
     const tlv =
       '01040000006402020050' +  // mileage=10, fuel=80
@@ -47,27 +41,28 @@ describe('parseLocationExtra (JT/T 808 0x0200 TLV-extras parser)', () => {
      * Expected-values derivation — TLV-by-TLV, see locationExtraParser.js.
      * Each TLV is: 1-byte ID + 1-byte length + length-bytes of value.
      *
-     * | Offset | ID | Len | ValueHex   | Field name (parser)    | Decoded                  |
-     * |--------|----|-----|------------|------------------------|--------------------------|
-     * | 70     | 01 | 04  | "00000064" | mileage                | parseInt/10 = 100/10 = 10|
-     * | 82     | 02 | 02  | "0050"     | fuel                   | parseInt = 80            |
-     * | 90     | 03 | 02  | "003C"     | speedExtra ⚠️          | parseInt = 60            |
-     * | 98     | 04 | 01  | "1B"       | signalStrength ⚠️      | parseInt = 27            |
-     * | 104    | 05 | 01  | "07"       | satellites             | parseInt = 7             |
-     * | 110    | 06 | 02  | "0FA0"     | battery ⚠️             | parseInt = 4000          |
-     * | 118    | 99 | 02  | "DEAD"     | unknown_99 (default)   | raw hex "DEAD"           |
+     * | Offset | ID | Len | ValueHex   | Field name (parser)  | Decoded                  |
+     * |--------|----|-----|------------|----------------------|--------------------------|
+     * | 70     | 01 | 04  | "00000064" | mileage              | parseInt/10 = 100/10 = 10|
+     * | 82     | 02 | 02  | "0050"     | fuel                 | parseInt = 80            |
+     * | 90     | 03 | 02  | "003C"     | extendedSpeed        | parseInt = 60            |
+     * | 98     | 04 | 01  | "1B"       | gsmSignal            | parseInt = 27            |
+     * | 104    | 05 | 01  | "07"       | satellites           | parseInt = 7             |
+     * | 110    | 06 | 02  | "0FA0"     | batteryVoltage       | parseInt = 4000          |
+     * | 118    | 99 | 02  | "DEAD"     | unknown_99 (default) | raw hex "DEAD"           |
      *
-     * ⚠️ = field name does NOT match the writer in ingestion/index.js
-     * (writer reads gsmSignal/extendedSpeed/batteryVoltage). Bug 1 in
-     * STAGE_2_KNOWN_BUGS.md. Locked here as the current output.
+     * Field names match the writer's reads in ingestion/index.js after the
+     * Bug 1 fix. Previously these were `speedExtra`/`signalStrength`/
+     * `battery`, which the writer didn't read — silent NULL columns in
+     * `gps_extra_location_legacy`. See STAGE_2_KNOWN_BUGS.md.
      */
     expect(result).toEqual({
       mileage: 10,
       fuel: 80,
-      speedExtra: 60,
-      signalStrength: 27,
+      extendedSpeed: 60,
+      gsmSignal: 27,
       satellites: 7,
-      battery: 4000,
+      batteryVoltage: 4000,
       unknown_99: 'DEAD',
     });
   });

@@ -26,11 +26,11 @@ function parseLocationExtra(hex) {
           break;
 
         case "03":
-          extras.speedExtra = parseInt(valueHex, 16);
+          extras.extendedSpeed = parseInt(valueHex, 16);
           break;
 
         case "04":
-          extras.signalStrength = parseInt(valueHex, 16);
+          extras.gsmSignal = parseInt(valueHex, 16);
           break;
 
         case "05":
@@ -38,7 +38,7 @@ function parseLocationExtra(hex) {
           break;
 
         case "06":
-          extras.battery = parseInt(valueHex, 16);
+          extras.batteryVoltage = parseInt(valueHex, 16);
           break;
 
         default:

@@ -10,36 +10,33 @@ Status legend: 🔴 not started · 🟡 fix in progress · 🟢 fixed
 
 ---
 
-## Bug 1 — `parseLocationExtra` field names don't match writer expectations  🔴
+## Bug 1 — `parseLocationExtra` field names don't match writer expectations  🟢
 
 **File:** `backend/ingestion/utils/locationExtraParser.js`
 
 **Expected behavior:** The parser should emit field names that match what
 `ingestion/index.js` (the writer) reads when it builds the database row.
-Three pairs are currently mismatched, so the writer reads `undefined`
-and the column lands as NULL even though the parser decoded a real
-value.
+Three pairs were mismatched, so the writer read `undefined` and the
+column landed as NULL even though the parser decoded a real value.
 
-**Current behavior:**
+**Pre-fix behavior:**
 
-| Parser emits (`locationExtraParser.js`) | Writer reads (`index.js`) | Result |
+| Parser emitted (`locationExtraParser.js`) | Writer reads (`index.js`) | Result |
 |---|---|---|
 | `signalStrength` | `gsmSignal` | Silently dropped |
 | `battery` | `batteryVoltage` | Silently dropped |
 | `speedExtra` | `extendedSpeed` | Silently dropped |
 
-`mileage`, `fuel`, `satellites` match on both sides and are not affected.
+`mileage`, `fuel`, `satellites` matched on both sides and were not affected.
 
 **Test that locks this:** `backend/test/parsers/locationExtra.test.js`,
-"Bug 1: synthetic TLV input — locks buggy field names". The test asserts
-the parser's *current* names so the fix commit must update the test in
-lockstep with the parser.
+"synthetic TLV input — verifies field names match writer reads". The
+test now asserts the post-fix names.
 
-**Planned fix commit:** TBD — rename the three parser fields to match
-the writer's spelling. The new schema's `positions.telemetry` jsonb
-column also uses the writer's names, so the fix aligns both sides at
-once. Once the rename lands, also remove the writer-side defensive
-fallback if any was added.
+**Fix commit:** TBD (filled in by follow-up commit) — renamed the three
+parser fields to match the writer's spelling. The new schema's
+`positions.telemetry` jsonb column uses the writer's names too, so the
+fix aligns parser/writer/schema at once.
 
 ---
 
