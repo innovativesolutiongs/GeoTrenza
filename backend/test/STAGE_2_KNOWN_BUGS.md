@@ -154,24 +154,22 @@ only `["ACC ON", "GPS Fixed"]` (the two bits that *are* set in value
 
 ---
 
-## Bug 5 — `parseLocationExtra` / `parseExtraMessages` dual-parser source mismatch  🔴
+## Bug 5 — `parseLocationExtra` / `parseExtraMessages` dual-parser source mismatch  🟢
 
-**File:** `backend/ingestion/index.js`, lines 158–184 (the
-`extraRepo.save({...})` block immediately after
-`const extras = parseLocationExtra(hex)`)
+**File:** `backend/ingestion/index.js`, the `extraRepo.save({...})`
+block immediately after `const extras = parseLocationExtra(hex)` and
+`const extraMsg = parseExtraMessages(hex)`.
 
 **Expected behavior:** The writer's read keys should come from the
-parser it just called. After `const extras = parseLocationExtra(hex)`,
-every `extras.XXX` reference should map to a key that
-`parseLocationExtra` actually emits. If a field is decoded by a
-different parser (`parseExtraMessages`), the writer should consult
-that parser's output instead.
+parser that actually emits them. After both parsers run, every
+`*.XXX` reference in `extraRepo.save` should map to a key the named
+source object actually contains.
 
-**Current behavior:** The writer reads four keys from `extras` that
+**Pre-fix behavior:** The writer read four keys from `extras` that
 `parseLocationExtra` never emits — they're only decoded by
 `parseExtraMessages` (or not at all):
 
-| Writer reads (in `extraRepo.save`) | Where the value actually lives          |
+| Writer read (pre-fix, all off `extras`) | Where the value actually lives          |
 |------------------------------------|-----------------------------------------|
 | `extras.alarmEvent`                | Nowhere — not emitted by either parser  |
 | `extras.temperature`               | `parseExtraMessages` case `51` (÷10)    |
@@ -179,27 +177,50 @@ that parser's output instead.
 | `extras.externalVoltage`           | `parseExtraMessages` case `61` (÷100)   |
 
 Result: the corresponding columns in `gps_extra_location_legacy`
-(`alarm_event`, `temperature`, `fuel_sensor`, `external_voltage`) have
+(`alarm_event`, `temperature`, `fuel_sensor`, `external_voltage`) had
 been **always NULL in production** since launch, regardless of what
-the device actually reports. This is the same root cause as the
+the device actually reported. This was the same root cause as the
 "two parsers running over the same hex region" issue — formerly listed
-under "Bugs not yet tracked" until this audit produced concrete
+under "Bugs not yet tracked" until the audit produced concrete
 production impact.
 
-**Test that locks this:** Not yet — this is a writer-side issue, so the
-regression test belongs with the writer's tests when Stage 2 writes
-them. The parser-level tests (`locationExtra.test.js`,
-`extraMessages.test.js`) correctly capture that each parser emits its
-own keys; the bug is in how the writer connects them.
+**Test that locks this:** `backend/test/integration/extras-merge.test.js`.
+A synthetic packet with TLVs `01/30/51/50/61` is run through both
+parsers and the writer-row shape from `index.js` is reconstructed and
+asserted. The test pins three things: (1) `parseLocationExtra` does
+not emit the four broken keys (precondition), (2) `parseExtraMessages`
+emits `temperature`/`fuelSensor`/`externalVoltage` from TLVs 51/50/61,
+(3) the post-fix writer row reads each field from the correct parser
+and reading e.g. `mileage` off `extras` is preserved (regression guard
+against future "simplifications").
 
-**Planned fix commit:** TBD — two plausible paths:
-1. Consolidate both parsers into a single TLV decoder (preferred —
-   reduces surface area). The combined parser would emit one object
-   with all decoded keys regardless of which "side" decoded them.
-2. Merge the two parsers' outputs in `index.js` before the writer
-   reads them: `const merged = { ...parseLocationExtra(hex),
-   ...parseExtraMessages(hex) }`. Cheaper short-term fix but doesn't
-   address the parser duplication.
+**Fix commit:** TBD — filled in by follow-up commit. The chosen path
+is option (2) from the original two plausible paths: selective merge
+in `index.js`. Both parsers are called, the writer reads
+`alarm_event`/`temperature`/`fuel_sensor`/`external_voltage` from
+`extraMsg` (parseExtraMessages's output) and every other field from
+`extras` (parseLocationExtra's output) — no spread, no implicit
+precedence. This avoids the spread-order ambiguity for fields both
+parsers emit (e.g. `batteryVoltage` from TLV 06 raw-int vs TLV E1
+÷10): `battery_voltage` continues to read off `extras` exclusively,
+preserving production unit semantics.
+
+**Known not fixed by this commit — `alarm_event`:** No parser emits
+`alarmEvent`. The TLV ID for JT/T 808 alarm events (`0x14` per the
+spec, or potentially a device-specific TLV) is not implemented in
+either `parseLocationExtra` or `parseExtraMessages`. After this fix
+the column reads `extraMsg.alarmEvent`, which is still `undefined →
+NULL`. Adding alarm decoding is a separate Stage 2 "new parsers"
+item; track as a follow-up bug or under Stage 2 parser-coverage work.
+
+**Deferred — single-decoder consolidation:** Option (1) from the
+original plan (consolidate both parsers into a single TLV decoder) is
+deferred to Stage 4 cleanup. The selective-merge path keeps both
+parsers in place but ensures no field is read from a parser that
+doesn't emit it. The remaining duplication (both parsers walking the
+same hex region, sometimes producing the same key from different TLV
+IDs) is a code-organization concern, not a correctness one once this
+fix lands.
 
 ---
 

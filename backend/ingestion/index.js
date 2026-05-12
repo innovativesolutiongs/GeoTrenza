@@ -156,7 +156,15 @@ AppDataSource.initialize().then(() => {
             /* ---------- EXTRA LOCATION DATA ---------- */
 
             const extras = parseLocationExtra(hex);
+            const extraMsg = parseExtraMessages(hex);
 
+            // Most fields below come from parseLocationExtra (extras).
+            // Four fields (alarm_event, temperature, fuel_sensor,
+            // external_voltage) come from parseExtraMessages (extraMsg)
+            // because parseLocationExtra doesn't decode those TLV IDs.
+            // alarm_event remains effectively NULL — no parser emits
+            // alarmEvent today (TLV 0x14 unimplemented). See
+            // STAGE_2_KNOWN_BUGS.md Bug 5.
             await extraRepo.save({
 
               terminal_id: terminalId,
@@ -167,7 +175,7 @@ AppDataSource.initialize().then(() => {
 
               speed_ext: extras.extendedSpeed || null,
 
-              alarm_event: extras.alarmEvent || null,
+              alarm_event: extraMsg.alarmEvent || null,
 
               signal_strength: extras.gsmSignal || null,
 
@@ -175,11 +183,11 @@ AppDataSource.initialize().then(() => {
 
               battery_voltage: extras.batteryVoltage || null,
 
-              temperature: extras.temperature || null,
+              temperature: extraMsg.temperature || null,
 
-              fuel_sensor: extras.fuelSensor || null,
+              fuel_sensor: extraMsg.fuelSensor || null,
 
-              external_voltage: extras.externalVoltage || null
+              external_voltage: extraMsg.externalVoltage || null
 
             });
 
@@ -188,7 +196,6 @@ AppDataSource.initialize().then(() => {
             /* ---------- EXTRA Message DATA ---------- */
 
 
-            const extraMsg = parseExtraMessages(hex);
 
             await extraDataRepo.save({
 
