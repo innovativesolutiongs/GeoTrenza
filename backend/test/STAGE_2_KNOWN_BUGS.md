@@ -194,9 +194,8 @@ emits `temperature`/`fuelSensor`/`externalVoltage` from TLVs 51/50/61,
 and reading e.g. `mileage` off `extras` is preserved (regression guard
 against future "simplifications").
 
-**Fix commit:** TBD — filled in by follow-up commit. The chosen path
-is option (2) from the original two plausible paths: selective merge
-in `index.js`. Both parsers are called, the writer reads
+**Fix commit:** `e0107ba` — selective merge in `index.js`. Both
+parsers are called, the writer reads
 `alarm_event`/`temperature`/`fuel_sensor`/`external_voltage` from
 `extraMsg` (parseExtraMessages's output) and every other field from
 `extras` (parseLocationExtra's output) — no spread, no implicit
