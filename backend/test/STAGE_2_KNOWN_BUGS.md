@@ -223,6 +223,93 @@ fix lands.
 
 ---
 
+## Bug 6 — Writer uses `|| null` for nullable numeric fields, coercing legitimate `0` to NULL  🔴
+
+**File:** `backend/ingestion/index.js`, both writer blocks:
+- `extraRepo.save({...})` (lines 172–190, 10 `|| null` instances)
+- `extraDataRepo.save({...})` (lines 204–222, 10 `|| null` instances)
+
+**Expected behavior:** Field fallbacks should distinguish "value not
+present in parser output" (write NULL) from "value present but zero"
+(write 0). For nullable numeric columns, `??` (nullish coalescing) is
+the correct operator — it falls back only on `undefined`/`null`. `||`
+falls back on any falsy value, which includes `0`.
+
+**Current behavior:** Both writer blocks use `value || null` for every
+field. When a parser legitimately emits `0` (e.g. `mileage: 0` for a
+brand-new device, `satellites: 0` before GPS lock, `speed_ext: 0` for
+a parked truck), the `||` operator collapses the 0 to `null` and the
+corresponding column is written as NULL instead of 0. The data loss
+is silent — no error, no log line, just a row where the
+value-was-zero case is indistinguishable from the value-was-missing
+case.
+
+**Fields where this bites in production:**
+
+| Field | Where read | Why `0` is a real reading |
+|---|---|---|
+| `mileage` | extraRepo + extraDataRepo | Brand-new device, odometer not yet incremented |
+| `fuel` | extraRepo + extraDataRepo | Empty tank |
+| `speed_ext` | extraRepo | Vehicle stopped — **highest-volume case** |
+| `signal_strength` / `gsm_signal` | extraRepo + extraDataRepo | Cellular dead zone |
+| `satellites` | extraRepo | No GPS fix yet — common at startup and indoors |
+| `temperature` | extraRepo + extraDataRepo | 0°C — rare but real |
+| `battery_percent` | extraDataRepo | Dead battery |
+| `humidity` | extraDataRepo | 0% — unlikely but possible |
+| `gnss_signal` | extraDataRepo | Same as signal_strength |
+
+**Concrete evidence:** `deviceSimulator.js` packet #3 contains TLV
+`01 04 00000000` (mileage = 0). On the smoke-test path,
+`extraRepo.save` writes `mileage: NULL` instead of `mileage: 0`
+because of `extras.mileage || null`. This is reproducible right now
+without changing any code.
+
+**Highest-volume real-world cases:** `speed_ext = 0` (every parked
+truck on every poll cycle) and `satellites = 0` (every packet during
+GPS warmup or indoor operation). The legacy `gps_extra_location_legacy`
+table has been losing both of these to NULL on every applicable
+packet since launch.
+
+**Fields where `|| null` is semantically equivalent (so the swap is a
+no-op):** `alarm_event` (bitmask; `0 = no alarms` and NULL both mean
+"nothing to report"), string-valued fields like `raw_extra` / `iccid`
+(empty string is unlikely to be a real reading). These don't *break*
+under `??` either — applying the operator uniformly is cleaner than
+per-field judgment.
+
+**Discovery context (Notes):** This bug was **not** identified during
+the Bug 5 design phase. It surfaced *only* in the failure output of
+Bug 5's integration test
+(`expect(writerRow.signal_strength).toBe(extras.gsmSignal)` — `null`
+≠ `undefined`), where `extras.gsmSignal || null` coerced
+`undefined → null`. At the time, the failure was diagnosed as a
+test-side artifact and worked around by extending the synthetic
+packet with TLV `04` so `extras.gsmSignal` got a real non-zero value.
+The underlying production bug — `||` coercing legitimate `0` values
+to NULL — was not promoted to a tracked bug at that point. The Bug 5
+fix commit (`e0107ba`) is therefore correct on the cross-parser merge
+but inherits the `|| null` shape verbatim from the pre-existing
+writer. This entry documents the bug for what it actually is and
+traces its real history: it has existed since this writer code was
+written (predating all of Stage 2), and was only *observable* during
+Bug 5 testing because of an incidental assertion shape.
+
+**Test that locks this:** Not yet. The Bug 6 fix commit will add (or
+extend) a regression test asserting that a packet with `mileage = 0`
+round-trips through the writer-row shape as `mileage: 0`, not
+`mileage: null`. The existing
+`backend/test/integration/extras-merge.test.js` is a natural place to
+add this, OR a new `writer-zero-coalesce.test.js` if the scope grows.
+
+**Planned fix commit:** TBD — global `|| null` → `?? null` swap
+across both `extraRepo.save` and `extraDataRepo.save` blocks (20
+occurrences). Pure operator swap; no parser changes, no schema
+changes, no handler reorganization. The swap preserves NULL writes
+for fields that genuinely aren't in the parser output, and starts
+preserving `0` writes for fields whose parser DID emit zero.
+
+---
+
 ## Bugs not yet tracked
 
 The remaining known issue from `docs/current-state.md` that is NOT in
