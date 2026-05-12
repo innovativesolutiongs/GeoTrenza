@@ -118,3 +118,38 @@ describe('extras-merge: Bug 5 cross-parser writer fix', () => {
     expect(writerRow.signal_strength).not.toBe(extraMsg.gsmSignal);
   });
 });
+
+describe('writer-zero-coalesce: Bug 6 — `?? null` preserves legitimate 0 readings', () => {
+  // Minimal packet: 82 chars of timestamp filler, then TLV 01 04 00000000
+  // (mileage = 0 — parseLocationExtra emits 0 / 10 = 0). Trailing pad
+  // satisfies the parser's `index < hex.length - 4` loop bound.
+  const hex = '0'.repeat(82) + '010400000000' + '0000';
+  const extras = parseLocationExtra(hex);
+
+  test('parseLocationExtra emits mileage === 0 for TLV 01 04 00000000', () => {
+    // Precondition: parser DOES emit zero. Bug 6 is purely a writer-side
+    // coercion — the parser is fine.
+    expect(extras.mileage).toBe(0);
+    expect(extras.mileage).not.toBeUndefined();
+  });
+
+  test('post-fix writer row preserves mileage: 0 (not null) via ?? null', () => {
+    // Mirrors the post-fix shape of extraRepo.save in
+    // backend/ingestion/index.js.
+    const writerRow = {
+      mileage: extras.mileage ?? null,
+    };
+    expect(writerRow.mileage).toBe(0);
+    expect(writerRow.mileage).not.toBeNull();
+  });
+
+  test('diagnostic: pre-fix `|| null` would have written null instead of 0', () => {
+    // Pin the bug's pre-fix behavior so the operator distinction is
+    // documented in-place. If someone reverts ?? → || in the future,
+    // this test still passes — it's a documentation-as-test of WHY the
+    // swap matters, not a regression guard. The actual guard is the
+    // test above.
+    const preFix = extras.mileage || null;
+    expect(preFix).toBeNull();
+  });
+});

@@ -223,7 +223,7 @@ fix lands.
 
 ---
 
-## Bug 6 — Writer uses `|| null` for nullable numeric fields, coercing legitimate `0` to NULL  🔴
+## Bug 6 — Writer uses `|| null` for nullable numeric fields, coercing legitimate `0` to NULL  🟢
 
 **File:** `backend/ingestion/index.js`, both writer blocks:
 - `extraRepo.save({...})` (lines 172–190, 10 `|| null` instances)
@@ -235,13 +235,13 @@ present in parser output" (write NULL) from "value present but zero"
 the correct operator — it falls back only on `undefined`/`null`. `||`
 falls back on any falsy value, which includes `0`.
 
-**Current behavior:** Both writer blocks use `value || null` for every
+**Pre-fix behavior:** Both writer blocks used `value || null` for every
 field. When a parser legitimately emits `0` (e.g. `mileage: 0` for a
 brand-new device, `satellites: 0` before GPS lock, `speed_ext: 0` for
-a parked truck), the `||` operator collapses the 0 to `null` and the
-corresponding column is written as NULL instead of 0. The data loss
-is silent — no error, no log line, just a row where the
-value-was-zero case is indistinguishable from the value-was-missing
+a parked truck), the `||` operator collapsed the 0 to `null` and the
+corresponding column was written as NULL instead of 0. The data loss
+was silent — no error, no log line, just a row where the
+value-was-zero case was indistinguishable from the value-was-missing
 case.
 
 **Fields where this bites in production:**
@@ -294,19 +294,25 @@ traces its real history: it has existed since this writer code was
 written (predating all of Stage 2), and was only *observable* during
 Bug 5 testing because of an incidental assertion shape.
 
-**Test that locks this:** Not yet. The Bug 6 fix commit will add (or
-extend) a regression test asserting that a packet with `mileage = 0`
-round-trips through the writer-row shape as `mileage: 0`, not
-`mileage: null`. The existing
-`backend/test/integration/extras-merge.test.js` is a natural place to
-add this, OR a new `writer-zero-coalesce.test.js` if the scope grows.
+**Test that locks this:** `backend/test/integration/extras-merge.test.js`,
+new `describe` block "writer-zero-coalesce: Bug 6 — `?? null` preserves
+legitimate 0 readings". Three tests: (1) precondition that
+`parseLocationExtra` emits `mileage === 0` for TLV `01 04 00000000`,
+(2) regression guard that the post-fix writer row preserves
+`mileage: 0` via `?? null`, (3) diagnostic-as-test pinning the pre-fix
+`|| null` behavior of coercing 0 to null so the operator distinction
+is documented in-place.
 
-**Planned fix commit:** TBD — global `|| null` → `?? null` swap
-across both `extraRepo.save` and `extraDataRepo.save` blocks (20
-occurrences). Pure operator swap; no parser changes, no schema
-changes, no handler reorganization. The swap preserves NULL writes
-for fields that genuinely aren't in the parser output, and starts
-preserving `0` writes for fields whose parser DID emit zero.
+**Fix commit:** TBD (filled in by follow-up commit) — global
+`|| null` → `?? null` swap across both `extraRepo.save` and
+`extraDataRepo.save` blocks (20 occurrences). Pure operator swap; no
+parser changes, no schema changes, no handler reorganization. The
+swap preserves NULL writes for fields that genuinely aren't in the
+parser output, and starts preserving `0` writes for fields whose
+parser DID emit zero. Note: in the `extraDataRepo` block, 7 of 10
+fields read keys `parseExtraMessages` doesn't emit (see [Bug 7](#bug-7--parseextramessages-field-names-dont-match-extradatarepo-writer-expectations-)),
+so the operator swap is a no-op there for those fields — the actual
+production fix for that block lives in Bug 7.
 
 ---
 

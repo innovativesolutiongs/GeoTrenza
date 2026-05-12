@@ -169,25 +169,25 @@ AppDataSource.initialize().then(() => {
 
               terminal_id: terminalId,
 
-              mileage: extras.mileage || null,
+              mileage: extras.mileage ?? null,
 
-              fuel: extras.fuel || null,
+              fuel: extras.fuel ?? null,
 
-              speed_ext: extras.extendedSpeed || null,
+              speed_ext: extras.extendedSpeed ?? null,
 
-              alarm_event: extraMsg.alarmEvent || null,
+              alarm_event: extraMsg.alarmEvent ?? null,
 
-              signal_strength: extras.gsmSignal || null,
+              signal_strength: extras.gsmSignal ?? null,
 
-              satellites: extras.satellites || null,
+              satellites: extras.satellites ?? null,
 
-              battery_voltage: extras.batteryVoltage || null,
+              battery_voltage: extras.batteryVoltage ?? null,
 
-              temperature: extraMsg.temperature || null,
+              temperature: extraMsg.temperature ?? null,
 
-              fuel_sensor: extraMsg.fuelSensor || null,
+              fuel_sensor: extraMsg.fuelSensor ?? null,
 
-              external_voltage: extraMsg.externalVoltage || null
+              external_voltage: extraMsg.externalVoltage ?? null
 
             });
 
@@ -201,25 +201,25 @@ AppDataSource.initialize().then(() => {
 
               terminal_id: terminalId,
 
-              message_id: extraMsg.message_id || null,
+              message_id: extraMsg.message_id ?? null,
 
-              mileage: extraMsg.mileage || null,
+              mileage: extraMsg.mileage ?? null,
 
-              fuel: extraMsg.fuel || null,
+              fuel: extraMsg.fuel ?? null,
 
-              gsm_signal: extraMsg.gsm_signal || null,
+              gsm_signal: extraMsg.gsm_signal ?? null,
 
-              gnss_signal: extraMsg.gnss_signal || null,
+              gnss_signal: extraMsg.gnss_signal ?? null,
 
-              battery_voltage: extraMsg.battery_voltage || null,
+              battery_voltage: extraMsg.battery_voltage ?? null,
 
-              battery_percent: extraMsg.battery_percent || null,
+              battery_percent: extraMsg.battery_percent ?? null,
 
-              temperature: extraMsg.temperature || null,
+              temperature: extraMsg.temperature ?? null,
 
-              humidity: extraMsg.humidity || null,
+              humidity: extraMsg.humidity ?? null,
 
-              raw_extra: extraMsg.raw || null
+              raw_extra: extraMsg.raw ?? null
 
             });
 
