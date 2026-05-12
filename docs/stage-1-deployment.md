@@ -121,6 +121,28 @@ preferred order:
    the legacy standalone ingestion connects to the same DB with the same
    credentials. Use this as the last-resort source-of-truth.
 
+**Validate the credentials before §0.2.** The legacy `.env`'s `DB_PASSWORD`
+has been observed to drift from what Postgres actually accepts — most
+recently on 2026-05-12, when the legacy `.env`'s 16-char value was
+rejected and a different 15-char value had to be supplied by the dev
+mid-cutover. The hardcoded `12345` fallback in
+`ingestion/ormconfig.js` doesn't work either. Don't assume; verify:
+
+```bash
+set -a
+source /home/ubuntu/platform/backend/.env
+set +a
+PGPASSWORD="$DB_PASSWORD" psql -w \
+  -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" -d "$DB_NAME" \
+  -c "SELECT current_database(), current_user;"
+# expect: one row, gps_services | postgres
+```
+
+If this returns `FATAL: password authentication failed`, go back to the
+dev (source #1) for the real password. Don't proceed to §0.2 until this
+returns the expected row — every subsequent pre-flight step depends on
+these credentials.
+
 **`DB_PASSWORD` must be non-empty, even on a trust-auth local box.**
 `backend/src/ormconfig.ts:18` guards the connection config with
 `!DB_PASSWORD` (alongside the other four vars), which rejects an empty
@@ -144,10 +166,32 @@ There are no backups configured (Known Issue #8). This is the only rollback
 path if both `npm run migration:revert` and your nerves give out. **Do not
 skip.**
 
+**About authentication for §0.2–§0.4.** An earlier draft of this section
+used `sudo -u postgres pg_dump`. That doesn't work on this EC2: verified
+2026-05-12, `pg_hba.conf` is `md5` for `local all postgres` (and
+`scram-sha-256` for `host all all 127.0.0.1/32`) — no `peer`, no
+`trust`, anywhere. Running as the OS `postgres` user would prompt for
+the same password as a TCP connection would. We use TCP with credentials
+sourced from `.env` (validated in §0.1) instead. The pattern is the same
+for §0.3 and §0.4.
+
 ```bash
-sudo -u postgres pg_dump -Fc gps_services \
-  > /tmp/stage-1-pre-migration-$(date -u +%Y%m%dT%H%M%SZ).dump
-ls -lh /tmp/stage-1-pre-migration-*.dump
+# Source .env (idempotent if already done in §0.1)
+set -a
+source /home/ubuntu/platform/backend/.env
+set +a
+
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+DUMP="/tmp/stage-1-pre-migration-${TS}.dump"
+umask 077                                   # dump file lands 0600, not world-readable
+
+PGPASSWORD="$DB_PASSWORD" pg_dump -w \
+  -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" \
+  -Fc -f "$DUMP" "$DB_NAME"
+
+ls -lh "$DUMP"
+pg_restore --list "$DUMP" | head -20        # integrity check: parses the TOC
+pg_restore --list "$DUMP" | wc -l           # TOC entry count (sanity)
 ```
 
 Copy the dump off the EC2 immediately (S3, scp to an admin laptop, anywhere
@@ -155,11 +199,14 @@ that isn't this disk):
 
 ```bash
 # example — replace with your destination
-scp /tmp/stage-1-pre-migration-*.dump admin@offbox:/backups/
+scp -p "$DUMP" admin@offbox:/backups/   # -p preserves 0600
 ```
 
-Confirm the file size is non-trivial (≥ a few MB; an empty dump is a sign that
-the command silently failed).
+The runbook used to advise "≥ a few MB" as a sanity threshold. That's a
+guideline, not a rule — the 2026-05-12 dump was 50KB and that was correct
+for the genuinely-small state of the DB at the time. If you get a dump
+much smaller than the previous one for no apparent reason, investigate.
+A *zero-byte* dump is still a clear silent-failure sign.
 
 ### 0.3 Verify the case of users."ID"
 
@@ -168,8 +215,15 @@ to match the existing entity classes. If production was somehow created with
 lowercase `id`, Migration 4 will fail. Confirm before applying:
 
 ```bash
-sudo -u postgres psql -d gps_services -c '\d users'    | head -30
-sudo -u postgres psql -d gps_services -c '\d accounts' | head -10
+# Source .env (idempotent if already done in §0.1 / §0.2)
+set -a
+source /home/ubuntu/platform/backend/.env
+set +a
+export PGPASSWORD="$DB_PASSWORD"
+
+PSQL="psql -w -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -d $DB_NAME"
+$PSQL -c '\d users'    | head -30
+$PSQL -c '\d accounts' | head -10
 ```
 
 Look for `"ID"` as the primary-key column (capital letters, quoted). If you
@@ -178,7 +232,13 @@ see lowercase `id`, **stop and escalate** — the migrations need adjusting.
 ### 0.4 Confirm row counts that the migrations depend on
 
 ```bash
-sudo -u postgres psql -d gps_services <<'SQL'
+# Source .env (idempotent if already done in §0.1–§0.3)
+set -a
+source /home/ubuntu/platform/backend/.env
+set +a
+export PGPASSWORD="$DB_PASSWORD"
+
+psql -w -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" -d "$DB_NAME" <<'SQL'
 -- Migration 4 requires that no users row has NULL customerID.
 SELECT count(*) FROM users WHERE "customerID" IS NULL;
 -- Should return 0. If non-zero, see schema-v2.md §"Migration strategy".
