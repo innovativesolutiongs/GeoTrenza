@@ -150,19 +150,63 @@ only `["ACC ON", "GPS Fixed"]` (the two bits that *are* set in value
 
 ---
 
+## Bug 5 — `parseLocationExtra` / `parseExtraMessages` dual-parser source mismatch  🔴
+
+**File:** `backend/ingestion/index.js`, lines 158–184 (the
+`extraRepo.save({...})` block immediately after
+`const extras = parseLocationExtra(hex)`)
+
+**Expected behavior:** The writer's read keys should come from the
+parser it just called. After `const extras = parseLocationExtra(hex)`,
+every `extras.XXX` reference should map to a key that
+`parseLocationExtra` actually emits. If a field is decoded by a
+different parser (`parseExtraMessages`), the writer should consult
+that parser's output instead.
+
+**Current behavior:** The writer reads four keys from `extras` that
+`parseLocationExtra` never emits — they're only decoded by
+`parseExtraMessages` (or not at all):
+
+| Writer reads (in `extraRepo.save`) | Where the value actually lives          |
+|------------------------------------|-----------------------------------------|
+| `extras.alarmEvent`                | Nowhere — not emitted by either parser  |
+| `extras.temperature`               | `parseExtraMessages` case `51` (÷10)    |
+| `extras.fuelSensor`                | `parseExtraMessages` case `50`          |
+| `extras.externalVoltage`           | `parseExtraMessages` case `61` (÷100)   |
+
+Result: the corresponding columns in `gps_extra_location_legacy`
+(`alarm_event`, `temperature`, `fuel_sensor`, `external_voltage`) have
+been **always NULL in production** since launch, regardless of what
+the device actually reports. This is the same root cause as the
+"two parsers running over the same hex region" issue — formerly listed
+under "Bugs not yet tracked" until this audit produced concrete
+production impact.
+
+**Test that locks this:** Not yet — this is a writer-side issue, so the
+regression test belongs with the writer's tests when Stage 2 writes
+them. The parser-level tests (`locationExtra.test.js`,
+`extraMessages.test.js`) correctly capture that each parser emits its
+own keys; the bug is in how the writer connects them.
+
+**Planned fix commit:** TBD — two plausible paths:
+1. Consolidate both parsers into a single TLV decoder (preferred —
+   reduces surface area). The combined parser would emit one object
+   with all decoded keys regardless of which "side" decoded them.
+2. Merge the two parsers' outputs in `index.js` before the writer
+   reads them: `const merged = { ...parseLocationExtra(hex),
+   ...parseExtraMessages(hex) }`. Cheaper short-term fix but doesn't
+   address the parser duplication.
+
+---
+
 ## Bugs not yet tracked
 
-The two main known bugs from `docs/current-state.md` that are NOT in
+The remaining known issue from `docs/current-state.md` that is NOT in
 this list:
 
 - **Speed-triggered engine-immobilizer** — already disabled in Stage 0
   (commented out in `ingestion/index.js`). Stage 4 redesigns with the
   four-condition safeguard.
-- **Two parsers running over the same hex region** —
-  `parseLocationExtra` and `parseExtraMessages` both scan the trailing
-  TLVs of a 0x0200 packet but recognize different ID sets. Not strictly
-  a bug, but the Stage 2 rewrite should consolidate to a single TLV
-  decoder.
 
 Add new bugs to this list as they're found. When a fix lands, replace
 "TBD" with the commit SHA and flip the status emoji.
