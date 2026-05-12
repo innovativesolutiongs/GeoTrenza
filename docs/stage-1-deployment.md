@@ -121,6 +121,20 @@ preferred order:
    the legacy standalone ingestion connects to the same DB with the same
    credentials. Use this as the last-resort source-of-truth.
 
+**`DB_PASSWORD` must be non-empty, even on a trust-auth local box.**
+`backend/src/ormconfig.ts:18` guards the connection config with
+`!DB_PASSWORD` (alongside the other four vars), which rejects an empty
+string. If you're following this runbook on a local Postgres.app /
+trust-auth setup for a dry-run instead of the production EC2 — the
+connection at the socket level doesn't need a password, but the env
+validation still does. Use a placeholder, e.g.:
+
+```
+DB_PASSWORD=local-trust-auth-no-password
+```
+
+Production unaffected — it has a real password.
+
 After Stage 1, this checkout at `/home/ubuntu/platform/` stays in place.
 Stage 2 reuses it for the new ingestion service.
 
@@ -448,10 +462,15 @@ Each invocation should print:
 Migration "<name><timestamp>" has been reverted successfully.
 ```
 
-**Caveat for Migration 4's down():** it drops the FK and the `NOT NULL`, but
-it cannot recreate the three deleted `users` rows (`ID = 1, 4, 5`). If you
-need those rows back (you almost certainly don't — they were test data), skip
-to 6.2.
+**Caveat for Migration 4's down() — asymmetric by design.** The revert
+drops the FK and the `NOT NULL` on `users.customerID`, but it **cannot
+restore the deleted test users (`ID = 1, 4, 5`)**. The rows are gone
+from the live table; TypeORM's revert path has no way to recover them.
+If you need them back for any reason, fall through to §6.2 (`pg_restore`
+from the pre-migration dump taken in §0.2). In practice you almost
+certainly don't — those three rows were confirmed test data before
+Stage 1 — but a future operator running `migration:revert` should know
+before they hit it, rather than discover after the fact.
 
 After the four reverts, verify:
 
