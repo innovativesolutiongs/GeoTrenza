@@ -449,6 +449,184 @@ devices enter the fleet.
 
 ---
 
+## Bug 8 — `locationExtraParser` fictional TLV IDs cause silent data corruption on real G107 packets  🔵
+
+**Files:**
+- `backend/ingestion/utils/locationExtraParser.js` (cases `0x03`, `0x04`, `0x05`, `0x06`)
+- `backend/ingestion/utils/extraMessageParser.js` (case `0xF9` — additional fictional ID)
+- `backend/ingestion/index.js` `extraRepo.save({...})` block — consumes the corrupted output
+
+**Expected behavior:** Each parser case should reference a TLV ID the
+spec actually defines, with the parser's output key matching the
+spec's field semantics. If a parser emits a key, it should reflect a
+real device reading — not a misattributed value from a different
+field.
+
+**Behavior:**
+
+- **`locationExtraParser` cases `0x03`, `0x05`, `0x06` reference TLV
+  IDs that don't exist in the Mobicom JT808 V2.2 spec at all.**
+  Verified against `docs/protocols/mobicom-jt808-v2.2.pdf` (full
+  Table 5-10 audit). These cases are dead code unless the device
+  coincidentally emits a non-spec TLV with one of these IDs.
+
+- **`locationExtraParser` case `0x04` is wrong-semantic.** Spec
+  defines TLV `0x04` (G107 explicit, also G109-MK) as 2-byte battery
+  status: 1st byte = charger-connected flag (`0x00` connected /
+  `0x01` not connected), 2nd byte = battery percent (1-100).
+  locationExtraParser stores the raw 2-byte value under
+  `extras.gsmSignal`, and `extraRepo.save` then writes that value
+  into the `signal_strength` column.
+
+- **Verified on a real captured G107 packet** (audit done after spec
+  PDF was committed at `docs/protocols/`): the packet contains TLV
+  `0x04` with value `0x0124`. locationExtraParser's case `0x04`
+  would emit `extras.gsmSignal = 292`. The writer persists `292`
+  into `gps_extra_location_legacy.signal_strength`. The real values
+  thrown away: charger-not-connected flag (`0x01`) and battery
+  percent (`0x24` = 36%).
+
+- **`extraMessageParser` case `0x04` is partial.** It correctly names
+  the field `batteryStatus` but stores it as raw hex string
+  (`"0124"`) without decoding the structured 2-byte format.
+  Compounding this: `extraDataRepo.save` does not read
+  `batteryStatus`, so this captured-but-unstructured value is
+  discarded entirely. Net effect: extraMessageParser correctly
+  identifies `0x04` but loses the data anyway.
+
+- **`extraMessageParser` case `0xF9` is also fictional.** No TLV
+  `0xF9` defined in the spec. Currently maps to `batteryPercent`,
+  which conflicts with the spec-correct case `0x56` already mapping
+  to the same key (last-write-wins if both hypothetically present).
+
+**Test that locks this:** None yet. Bug 8 is documented from the
+spec PDF audit (`docs/protocols/mobicom-jt808-v2.2.pdf`) plus the
+real-packet decode. Adding regression tests would require either:
+(a) a synthetic packet fixture exercising TLV `0x04`, asserting that
+the corruption manifests (diagnostic-as-test pattern, similar to Bug
+6's pre-fix diagnostic), or (b) deferring the test to Stage 4
+alongside the parser rewrite. **Currently no test in
+`backend/test/parsers/`.**
+
+**Planned fix sketch (Stage 4):** Discard `locationExtraParser`
+entirely as part of the Stage 4 ingestion rewrite. The new
+positions/events writer should consume only spec-correct TLV
+decodes from a unified parser. For TLV `0x04`: emit
+`chargerConnected: boolean` and `batteryPercent: number` as separate
+keys, with the new schema receiving them as separate columns or a
+structured `battery_status` jsonb field. Drop case `0xF9` from
+extraMessageParser (or its replacement) since no TLV `0xF9` exists.
+
+**Deferral decision:** Bug 8 is intentionally deferred to Stage 4.
+Same principle as Bug 4 and Bug 7's speculative-column deferrals:
+the legacy `gps_extra_location_legacy` writer that this corruption
+flows into is being retired in Stage 4 as part of the broader
+ingestion rewrite. Investing in fixing `locationExtraParser` would
+be throwaway work — the parser itself goes away.
+
+Production impact during deferral: `signal_strength` column on
+`gps_extra_location_legacy` is corrupted on every real G107 packet
+(writes battery-status bytes, not signal strength). Acceptable
+because (a) no real fleet is deployed yet — the G107 packet that
+confirmed the bug was a single sample capture, (b) Stage 4 retires
+the affected table entirely. The data corruption does not propagate
+beyond this single legacy column.
+
+Stage 4 design must include: (1) `locationExtraParser` is not part
+of the new ingestion path, (2) TLV `0x04` is decoded via structured
+2-byte parse into charger-flag + battery-percent fields, (3) the
+new schema's signal-strength column (if any) populates only from
+TLV `0x30` via parseExtraMessages's replacement.
+
+---
+
+## Bug 9 — G107 emits real TLVs that no parser handles, losing operational data  🔵
+
+**Files:**
+- `backend/ingestion/utils/extraMessageParser.js` and
+  `backend/ingestion/utils/locationExtraParser.js` — both fall
+  through to `default` case, emitting `unknown_<ID>` keys that the
+  writer ignores.
+
+**Expected behavior:** TLVs that G107 actually emits in production
+should be decoded into named keys the writer can persist. The
+spec's per-TLV "device" annotation in Table 5-10 is a guide, not
+exhaustive — devices can emit TLVs not listed for them.
+
+**Behavior:** A real G107 packet captured from production EC2 and
+decoded against the spec PDF (`docs/protocols/mobicom-jt808-v2.2.pdf`)
+contains two TLVs that no parser handles:
+
+- **TLV `0x5D` — 4G base station data.** Spec format: 1-byte count,
+  then n*10 bytes per cell (MCC 2B, MNC 1B, LAC 2B, CELLID 4B,
+  signal 1B). The captured packet had 4 cell entries (MCC 404, LAC
+  2060, four neighboring CELLIDs). Both parsers fall through to
+  `extras.unknown_5D` / `extraMsg.unknown_5D`; writer doesn't read
+  either. **Lost entirely.** Operational impact: device is reporting
+  cell-tower-based positioning fallback data that could be used
+  when GPS is weak — currently invisible to the platform.
+
+- **TLV `0x57` — state extension with alarm bits.** Spec format: 8
+  bytes — bytes 0-1 alarm status, 2-3 switch status, 4-7 reserved.
+  Spec attributes this TLV to AT08N / W600 device families, but the
+  captured G107 packet emits it with alarm-status `0x0002` set (per
+  spec definition: "Anti-disassembly alarm (W600)"). Both parsers
+  fall through; writer doesn't read. **Anti-tamper alarm event
+  silently dropped.**
+
+**Spec's device-list field is not exhaustive** — yesterday's audit
+flagged this as a caveat, today's packet capture confirms it.
+Per-TLV device attribution in Table 5-10 should be treated as
+"documented for these devices" not "only emitted by these devices."
+Future parser work should decode TLVs the device actually sends,
+regardless of whether G107 is in the spec's device list.
+
+**Other potentially-emitted-but-unhandled TLVs** (G107-explicit per
+spec, not seen in this single capture but expected in other packet
+types or device states): `0x53` 2G base station data, `0x54` Wi-Fi
+data, `0x56` battery percent (currently behind Bug 8's path
+conflict), `0xEE` battery percent (third path), `0xFB` wake-up
+source, `0xFC` IMEI. See [[reference_mobicom_jt808_spec]] and the Q5
+column of the verification report from the packet-capture audit.
+
+**Test that locks this:** None yet. Bug 9 is documented from a
+single real-packet capture plus the spec PDF audit. A synthetic
+packet fixture exercising `0x5D` and `0x57` would lock current
+"falls through to unknown" behavior; the fix would replace those
+assertions with structured decodes. **Currently no test in
+`backend/test/parsers/`.**
+
+**Planned fix sketch (Stage 4):** New unified TLV decoder in the
+Stage 4 ingestion path should include `0x5D` and `0x57` as
+first-class cases.
+
+- `0x5D` cell tower data should likely flow to a new
+  `positions.cell_towers` jsonb column (array of
+  `{mcc, mnc, lac, cellid, signal}` objects) or an
+  `events.cell_tower_reading` row per scan, since the data is
+  structurally rich and not column-shaped.
+
+- `0x57` alarm bits should map to `events` rows with
+  `kind = 'anti_disassembly_alarm'` etc., one event per set bit,
+  dovetailing with Bug 4's transition-only events model.
+
+**Deferral decision:** Bug 9 is intentionally deferred to Stage 4.
+Same reasoning as Bug 4 / 7 / 8: the legacy writers don't have
+columns for cell-tower data or extension alarms, so adding parsers
+without a place to write them would be half-done work. Stage 4's
+`positions`/`events` schema is where these naturally land.
+
+Production impact during deferral: cell tower fallback positioning
+data and anti-tamper alarms are silently dropped. Acceptable
+because (a) no real fleet deployed yet, (b) GPS positioning works
+without cell-tower fallback in clear-sky conditions, (c)
+anti-tamper alarms are noise-level for a development single-device
+sample. **However**: once the fleet is deployed, anti-tamper alarms
+becoming visible should be treated as a Stage 4 acceptance
+criterion, not an optional nice-to-have.
+
+---
+
 ## Bugs not yet tracked
 
 The remaining known issue from `docs/current-state.md` that is NOT in
