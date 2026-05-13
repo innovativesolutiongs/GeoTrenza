@@ -95,6 +95,10 @@ function parseExtraMessages(hex) {
           extras.batteryPercent = parseInt(valueHex, 16);
           break;
 
+        case "FB":
+          extras.wakeUpSource = parseInt(valueHex, 16);
+          break;
+
         case "FC":
           extras.imei = Buffer.from(valueHex, 'hex').toString('ascii');
           break;

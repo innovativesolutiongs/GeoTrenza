@@ -162,4 +162,44 @@ describe('parseExtraMessages (JT/T 808 0x0200 extended-TLV parser)', () => {
       imei: '866651067197767',
     });
   });
+
+  test('TLV 0xFB wake-up source — decodes single-byte enum as integer', () => {
+    // TLV 0xFB is a single-byte enum identifying what woke the device
+    // from sleep. Per spec (docs/protocols/mobicom-jt808-v2.2.pdf, Table
+    // 5-10, lines 890-898 of the extracted text mirror):
+    //   0x00: Unknown
+    //   0x01: Boot up
+    //   0x02: Light-sensitive (Light perception has the highest priority)
+    //   0x03: Timing
+    //   0x04: Shock
+    //   0x05: Voice control
+    // Device list (G107, W500, GL600, PET1) — G107 is explicit.
+    //
+    // Parser stores the raw integer (0-5). Display labels and
+    // event-emission semantics ("Shock-triggered wake event") belong to
+    // the consumer (Stage 2 Phase B writer), not this parser. Same
+    // policy as gsmSignal storing raw RSSI rather than "Good/Poor".
+    //
+    // This was an UNHANDLED G107-explicit TLV per yesterday's audit
+    // and is one of the gaps Bug 9 explicitly calls out. Test fixture
+    // uses value 0x04 (Shock) — operationally interesting for a truck
+    // tracker (rough road, theft attempt, sudden impact).
+    const prefix = '0'.repeat(82);
+    const tlv = 'FB0104';
+    const hex = prefix + tlv;
+
+    const result = parseExtraMessages(hex);
+
+    /**
+     * Expected-values derivation — single-TLV iteration trace.
+     *
+     * | Offset | id   | len | ValueHex | Field name   | Decoded                    |
+     * |--------|------|-----|----------|--------------|----------------------------|
+     * | 82     | "FB" | 01  | "04"     | wakeUpSource | parseInt = 4 (spec: Shock) |
+     * | 88     | —    | —   | —        | —            | loop exits (88 < 88 false) |
+     */
+    expect(result).toEqual({
+      wakeUpSource: 4,
+    });
+  });
 });
