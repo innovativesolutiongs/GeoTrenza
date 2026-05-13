@@ -125,4 +125,41 @@ describe('parseExtraMessages (JT/T 808 0x0200 extended-TLV parser)', () => {
       batteryVoltage: 29.8,
     });
   });
+
+  test('TLV 0xFC IMEI — decodes 15 ASCII bytes into a digit string', () => {
+    // TLV 0xFC was added in spec V1.41 (2023-06-20) for "LTE module's
+    // imei". Format: 15 bytes, each byte is the ASCII code for one
+    // decimal digit. The spec gives a worked example:
+    //   bytes 38 36 36 36 35 31 30 36 37 31 39 37 37 36 37
+    //   → string "866651067197767"
+    // We use the spec's own example as the test fixture so anyone
+    // cross-checking can match the assertion to the PDF directly.
+    // See docs/protocols/mobicom-jt808-v2.2.pdf (Table 5-10) line 899
+    // of the extracted text mirror.
+    //
+    // No device list in the spec; per the spec audit (Q5 of yesterday's
+    // verification report) this is universal across LTE-capable trackers,
+    // including G107. Yesterday's parser-gap audit had this as an
+    // UNHANDLED G107-relevant TLV; this test locks in the new HANDLED
+    // status. Writer-side persistence (devices.imei vs positions.telemetry)
+    // is a Stage 2 Phase B decision — this commit only adds the parser case.
+    const prefix = '0'.repeat(82);
+    const tlv = 'FC0F383636363531303637313937373637';
+    const hex = prefix + tlv;
+
+    const result = parseExtraMessages(hex);
+
+    /**
+     * Expected-values derivation — single-TLV iteration trace.
+     *
+     * | Offset | id   | len | ValueHex                         | Field name | Decoded                                       |
+     * |--------|------|-----|----------------------------------|------------|-----------------------------------------------|
+     * | 82     | "FC" | 0F  | "383636363531303637313937373637" | imei       | Buffer.from(...,'hex').toString('ascii')      |
+     * |        |      |     |                                  |            | = "866651067197767" (per spec V1.41 example)  |
+     * | 116    | —    | —   | —                                | —          | loop exits (116 < 116 false)                  |
+     */
+    expect(result).toEqual({
+      imei: '866651067197767',
+    });
+  });
 });
