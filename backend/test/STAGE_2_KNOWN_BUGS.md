@@ -409,14 +409,43 @@ Post-fix the writer reads 6 keys and they all match parser output.
 **Stage 4 followup:** `gps_extra_messages_legacy` retains 4 columns
 no longer written by ingestion (`message_id`, `gnss_signal`,
 `humidity`, `raw_extra`). They will be NULL for every row inserted
-after this commit. Decision space for Stage 4:
-- Drop the 4 columns when the `positions`/`events` schema migration
-  runs (simplest, breaks any external readers querying them).
-- Keep them as NULL-tolerant columns indefinitely (defensive, but
-  carries dead schema forever).
-- Backfill via new TLV parsers if a real device source for any of
-  them ever surfaces (unlikely — they were speculative from the
-  start).
+after this commit. Spec audit against Mobicom JT808 Protocol V2.2
+(see [[reference_mobicom_jt808_spec]]) determines each column's
+Stage 4 disposition:
+
+- **`message_id`** — Not in the spec as a top-level TLV. Truly
+  speculative, no real data behind it. **Drop in Stage 4.**
+
+- **`gnss_signal`** — Duplicate naming of TLV `0x31`, which
+  `parseExtraMessages` already decodes into the `satellites`
+  column. The spec calls TLV `0x31` "GNSS Signal" but defines it
+  as "Number of positioning satellites" — same field, two names.
+  **Drop in Stage 4** since `satellites` already captures this
+  data correctly. Stage 4 must avoid carrying both names forward
+  on the new schema for what is one underlying reading.
+
+- **`humidity`** — Real TLV `0x58` in the spec (added V1.8,
+  2024-09-16): "Humidity (4 channels), 8 bytes, two bytes per
+  channel, unit: 1/10 degree." Catalogued for the G102 / G106 /
+  G108 / G108P device families (wiring trackers). The current
+  target device is G107 (battery-powered, no humidity sensor),
+  so this column is dead for the current fleet. **Drop in Stage 4**
+  as part of the legacy table retirement. If the device mix later
+  expands to a wiring-tracker family, a parser for TLV `0x58`
+  plus a corresponding column on the new schema would unlock real
+  data — but that's a future-fleet decision, not a Stage 4
+  blocker.
+
+- **`raw_extra`** (writer reads `extraMsg.raw`) — Not a standard
+  TLV. Most likely a debug catchall from earlier development.
+  Truly speculative with no spec backing. **Drop in Stage 4.**
+
+Bottom line: all four columns drop cleanly when the
+`positions`/`events` schema migration retires
+`gps_extra_messages_legacy`. The "backfill via new TLV parsers"
+option from the original Stage 4 decision space only applies to
+`humidity` (the one real TLV), and only if/when wiring-tracker
+devices enter the fleet.
 
 ---
 
