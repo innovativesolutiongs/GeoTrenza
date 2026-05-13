@@ -6,7 +6,7 @@ behavior — so when the fix lands, the test fails and is updated in the
 same commit. This document is the cross-reference between bugs, tests,
 and fix commits.
 
-Status legend: 🔴 not started · 🟡 fix in progress · 🟢 fixed
+Status legend: 🔴 not started · 🟡 fix in progress · 🟢 fixed · 🔵 deferred — intentionally not fixed in current stage, routed to a later stage
 
 ---
 
@@ -119,7 +119,7 @@ to keep each parser fix self-contained.
 
 ---
 
-## Bug 4 — `parseStatus` emits labels for "off" states, not just transitions  🔴
+## Bug 4 — `parseStatus` emits labels for "off" states, not just transitions  🔵
 
 **File:** `backend/ingestion/utils/statusParser.js`
 
@@ -128,7 +128,7 @@ to keep each parser fix self-contained.
 `events.kind` column with `started_at` / `ended_at` is designed for
 this transition model.
 
-**Current behavior:** For bits 0–4 and bit 6, `parseStatus` has both
+**Behavior:** For bits 0–4 and bit 6, `parseStatus` has both
 `if` and `else` branches and emits a label every call regardless of
 whether the underlying flag changed. The 0x0200 handler in `index.js`
 then writes one row to `gps_status_legacy` per emitted label, so the
@@ -145,12 +145,40 @@ correctly emitted only when set.
 packet #3)". The expected six-element output includes four
 `else`-branch labels for bits that are off.
 
-**Planned fix commit:** TBD — replace the parser's `if/else` emissions
+**Planned fix sketch (Stage 4):** replace the parser's `if/else` emissions
 with an object describing each flag's current state, and let the
 0x0200 handler diff against the device's previous state to compute
 transitions. Writes only on transition. The test will then expect
 only `["ACC ON", "GPS Fixed"]` (the two bits that *are* set in value
 3) and likely also require a device-state cache as test fixture.
+
+**Deferral decision:** Bug 4 is intentionally deferred to Stage 4.
+The fix requires per-device state tracking (in-memory Map or
+similar), cold-start behavior decisions, and a reshape of
+parseStatus's output from array-of-labels to object-of-flag-states
+plus a separate transition-computer function. This is meaningful
+engineering investment.
+
+The legacy `gps_status_legacy` writer that Bug 4 affects is being
+retired in Stage 4 as part of the broader ingestion rewrite that
+replaces legacy writes with the new positions/events schema. The
+new events table architecture naturally encodes transitions (each
+event has a timestamp and a state change), which means Bug 4's fix
+dissolves into the schema design rather than being bolted onto a
+doomed writer.
+
+Investing in transition logic for the legacy writer would be
+throwaway work. Same principle applied here as Bug 7's deferral
+of speculative-column TLV parsers.
+
+Production impact during deferral: dashboards continue to receive
+"off-state" status labels mixed with real transitions — noisy but
+not data-corrupting. Acceptable until Stage 4 lands.
+
+Stage 4 design must include Bug 4's transition logic as a
+first-class requirement: events table writes should emit only on
+actual state changes, with per-device state tracking handling the
+diff.
 
 ---
 
