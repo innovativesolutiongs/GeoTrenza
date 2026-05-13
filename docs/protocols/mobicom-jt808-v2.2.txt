@@ -1,0 +1,1217 @@
+
+========== PAGE 1 ==========
+1
+Mobicom Telematics JT808 Protocol V2.2
+Applicable Models
+Wiring product series: G102/G105/G106/G108/G109
+Battery product series: G107/W100/W500/W600
+GPS Lock series: GL500C/GL600C/GL800C
+Shenzhen Mobicom Telematics Co.,Ltd Tel: + 86 19925389802
+Room 401,Building 2,Anxu Bussiness Park,No.35-1, sales@mobicomtracking.com
+Xiangyin Road,Longgang District,Shenzhen,China http://www.mobicomtracking.com
+========== PAGE 2 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 2 / 34
+Version History
+Version Update Date What’s new
+V1.0 2019-10-07 Organize and publish the new protocol framework
+V1.4 2023-6-19 Adjust the document structure, add 0x0300 command description and add examples
+V1.41 2023-6-20 Add extra message definition 0xFC of LTE module’s imei
+V1.42 2023-6-24 Add extra message definition 0xFD of wiring tracker’s built-in battery voltage
+V1.43 2023-6-26
+Alarm Indicator Define [Table 5-6] Update:
+After the event occurs, the alarm will only be reported once
+The main power supply of the terminal is powered off
+Acc on event
+Acc off event
+Status indicator definition [Table 5-7] Update:
+The main power supply of the terminal is powered off
+V1.5 2023-6-29 Add The second configuration parameter method 0x8103
+Add extra message definition 0x40 for ibutton & RFID function
+V1.51 2023-07-07 Corrected and optimized the parsing of 0x0200
+V1.6 2024-06-23
+Add extension bytes 0xE7, 0xE8, 0xE9
+0xE7: 24 types alarm status,0xE7 packet alarm status bit definition
+0xE8: 24 types status,0xE8 packet switch status bit definition
+0xE9: 1-100 battery percentage.1 byte. The same as 0xEE
+V1.7 2024-08-01 Add extension bytes 0x61
+0x61: External voltage of battery products
+V1.8 2024-09-16 Add extension bytes 0x58
+0x58: Humidity
+V1.9 2024-10-18 Add extension bytes 0xD8,0xD9 for GPS Lock
+V2.0 2025-1-17 Add extension bytes G109-MK 0xF4
+V2.1 2025-7-11 Add Leave the fortified area alarm and status
+========== PAGE 3 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 3 / 34
+Content
+Version History ................................................................................................................................................................2
+1 Preface ......................................................................................................................................................................... 4
+2 Communication Connect .............................................................................................................................................4
+2.1 Build Connection .............................................................................................................................................. 4
+2. 2 Keep Connection ..............................................................................................................................................4
+2.3 Disconnect ........................................................................................................................................................ 4
+3 Message Processing .....................................................................................................................................................5
+3. 1 Message From Platform .................................................................................................................................. 5
+3.2 Message Sent From Terminal............................................................................................................................5
+3.2.1 Communication Link Connected ........................................................................................................... 5
+3.2.2 Communication Link Disconnected .......................................................................................................5
+4 Protocol Basic .............................................................................................................................................................. 6
+4.1 Communication Mode ......................................................................................................................................6
+4.2 Data Type .......................................................................................................................................................... 6
+4.3 Transmission Data Rule .................................................................................................................................... 6
+4.4 Message Structure ............................................................................................................................................6
+4.5 Message Header ...............................................................................................................................................7
+4.6 Packet Header/End And Escape ....................................................................................................................... 8
+4.7 Check Code ....................................................................................................................................................... 8
+5 Uploading Data Format From Device & Server ...........................................................................................................9
+5.1 Communication Between Device And Platform .............................................................................................. 9
+5.2 Platform Universal ACK【8001】 .................................................................................................................. 10
+5.3 Device Authorization【0102】 ......................................................................................................................10
+5.3.1 Format Of Device Authorization Message .......................................................................................... 10
+5.3.2 Device Authorization Request- Platform Universal ACK example ...................................................... 11
+5.4 Device Heartbeat Packet【0002】 ................................................................................................................11
+5.5 GPS Data【0200】 .........................................................................................................................................12
+5.5.1 GPS Data 0x0200 Structure [Table 5-5] ...............................................................................................12
+5.5.2 GPS Data User-defined Item ............................................................................................................... 13
+5.5.2.1 Alarm Indicator Define [Table 5-6] ...........................................................................................13
+5.5.2.2 Status indicator definition [Table 5-7] ..................................................................................... 14
+5.5.2.3 Message-location extra message [Table 5-8] .......................................................................... 15
+5.5.2.4 Extra message definition [Table 5-10] ..................................................................................... 16
+5.6 Send Command To Tracker【8300】 .............................................................................................................26
+5.7 Tracker Reply Command To Server【0300】 ................................................................................................ 26
+5.8 Server Download Data to Tracker【8900】 .................................................................................................. 27
+5.9 Tracker Upload Data to Server【0900】 ....................................................................................................... 27
+5.10 Raw Data Example ........................................................................................................................................29
+5.11 Common Commands [Table 5-17] ............................................................................................................... 31
+5.12 The second configuration parameter method 0x8103 ................................................................................33
+========== PAGE 4 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 4 / 34
+1 Preface
+This file is to describe communication protocol between GPS padlock and platform. GPS
+padlock/terminal sent data via GPRS with using TCP. GPS padlock/terminal is the client, platform is the server.
+2 Communication Connect
+2.1 Build Connection
+Terminal communicates with platform via GPRS by using TCP protocol. Terminal should connect to
+platform as soon as possible once power on. Terminal sends location & lock status info to platform
+immediately once connection set up.
+2. 2 Keep Connection
+After connection set-up, terminal should report its location/status to platform periodically, platform
+received and response to terminal, report intervaltime decided by terminal.
+Note:
+Keep connection is necessary if requires terminal ready to receive commands from platform at any time. If set
+interval report time is more than 120 seconds, and device does not report location/status info to platform after
+120s, then need to send heartbeat packet, so that GPRS link will not be cut off as empty link by GSM operators.
+2.3 Disconnect
+Both platform and terminal can cut off connection based on TCP protocol, and both should initiatively
+judge whether the connection cut off or not.
+Ways for Platform to judge disconnection:
+——According to TCP protocol, see if connection cut off by terminal;
+——Terminal re-connect to platform with same ID, means the former connection be cut off;
+——No message from terminal for some time, like heartbeat message.
+Ways for Platform to judge disconnection:
+——According to TCP protocol, see if connection is cut off by platform;
+——GSM network linkage disconnected;
+——GSM network normal, but no reply from platform after several times reporting.
+========== PAGE 5 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 5 / 34
+3 Message Processing
+3. 1 Message From Platform
+All messages sent from platform require terminal response. When the sender waits for a response timeout,
+the message will be re-sent. The response timeout and the re-send times are specified by the platform.
+Each re-send response timeoutand
+re-send times are specified by the platform. Below is the formula of theresponse timeout after each
+re-send:
+TN+1=TN*(N+1) Formula (1)
+Remark：
+TN+1: Response timeout after each re-send; TN: Last
+response timeout;
+N: Resend times
+3.2 Message Sent From Terminal
+3.2.1 Communication Link Connected
+If communication link is connected, all messages sent from terminal require platform response. When the
+terminal waits for a response timeout, the message will be re-sent. The response timeout and the re-send times
+are specified by the terminal. Formula (1) can be used to calculate each resend response timeout after each
+re-send. If the terminal does not get any response from platform after reaching the setting times, then it will save
+the message locally.
+3.2.2 Communication Link Disconnected
+If communication link disconnected, terminal should save all message (call it blind-zone/history
+data) locally and resend to platform when it is connected again. For priority of the data, real-time
+data sent firstly, history (Blind-zone) data secondly.
+========== PAGE 6 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 6 / 34
+4 Protocol Basic
+4.1 Communication Mode
+It takes TCP/UDP platform as server end, and the terminal as client end. Normally, we use TCP protocol as main
+communication mode.
+4.2 Data Type
+Data type in protocol as below Table 4-1:
+DATA TYPE DESCRIPTION AND REQUIREMENT
+BYTE Unsigned single-byte integer (byte: 8-bit)
+WORD Unsigned double-bytes integer (byte: 16-bit)
+DWORD Unsigned four-bytes integer (double bytes: 32-bit)
+BYTE[n] N bytes
+BCD[n] 8421 code，n byte
+Table 4-1
+4.3 Transmission Data Rule
+The device transmits the BYTE and WORD data to server side by using Big-endian mode.
+Rule as follow:
+Transfer agreement of BYTE: transferred by byte stream.
+Transfer agreement of WORD: transferred high 8 bits first step, and then low 8 bits.
+Transfer agreement of DWORD: first high 24 bits, next high 16 bits, and then high 8 bits, and low 8 bits last.
+4.4 Message Structure
+Message Structure
+Every piece data consists of packet header/end, message header, message body, and check code, the structure as
+below table 4-2:
+packet
+header
+Message
+header
+Message
+body
+Check
+code
+packet end
+Table 4-2
+========== PAGE 7 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 7 / 34
+4.5 Message Header
+Content of message header as below Table 4-3.
+START
+BYTE
+WORD
+DATA
+TYPE
+INSTRUCTION
+0 Message ID WORD
+2
+Message body ‘s attribute
+WORD The structure of Message body attribute. refer to
+Table 4-4
+4 Terminal ID BCD [6] Defined by User
+10 Message’s serial number WORD Accumulated from zero by sending sequence
+Table 4-3
+Message body ‘s attribute structure .as below Table 4-4：
+From 15th bit to 0th bit. From high bit to low bit.
+15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0
+Reser
+ved
+Connection
+Property
+Reserved
+Length of message body
+Table 4-4
+Connection Property Explain:
+bit14: 0 mean long connection; 1 mean short connection;
+Long Connection:
+Long connection means device should connect to platform for all time, so that device can receive commands
+from platform in any time. When interval report time is more than 120 seconds, then need to send heartbeat
+packet to stop GSM network be disconnected as an empty connection.
+Short Connection:
+Short connection means device does not need to connect with platform in all time. It just needs to report to
+the platform in scheduled time or report alert. In that condition, platform cannot send commands to device in
+any time. Short connection can save battery energy, a battery can be keep used for several months or even one
+or two years.
+========== PAGE 8 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 8 / 34
+4.6 Packet Header/End And Escape
+Use 0x7e，if there is 0x7e in check code, message header and message body, it will need to escape by following
+definition:
+0x7e ←→0x7d 0x02；
+0x7d ←→0x7d 0x01
+Steps:
+When Device send message: Message packing → count and fill check code → escaping
+When server receive message: Restore escape character convert to real data → verify check code → analysis
+message
+e.g.:
+Send a message with content: 0x30 0x7e 0x08 0x7d 0x55, after packing, it will change to 0x7e 0x30 0x7d 0x02
+0x08 0x7d 0x01 0x55 0x7e
+4.7 Check Code
+Check code occupy one byte. From Message header to Message body, XOR each bytes, and get check code.
+========== PAGE 9 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 9 / 34
+5 Uploading Data Format From Device & Server
+5.1 Communication Between Device And Platform
+Device authentication：Device send message to platform, to verify itself.
+First step：Device authorization【0102】
+Second step：Device heartbeat package【0002】
+Third step：Device uploads GPS data【0200】
+Note：
+1) Only after the ACK of device authorization is successful, device will send heartbeat package data or GPS data to
+server side.
+2) In second step, there’s no order of priority about device heartbeat data and GPS data. Platform (server program)
+unify to use platform universal ACK 0x8001
+3) If under the same platform (reconfigure the device server IP and port), device restart or connection with
+platform break off, Device will request device authorization again.
+Device authorization message ID [0102]
+Platform authorization ACK message ID [8001]
+1 2
+Platform universal ACK message ID [8001]
+3 4
+Device heartbeat message ID [0002]
+Platform universal ACK message ID [8001]
+5 6
+GPS data message ID [0200]
+========== PAGE 10 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 10 / 34
+5.2 Platform Universal ACK【8001】
+Message ID: 0x8001
+For format of the platform universal ACK’s message body content. Refer to Table 5-1
+START BYTE FIELD DATA TYPE DESCRIPTION
+0 ACK serial number WORD Related device message serial number
+2 ACK ID WORD Related the data’s Message ID
+4 result BYTE
+0: success/confirm
+1: failed
+2: message error
+3: not support
+4: alarm confirmation
+Table 5-1
+5.3 Device Authorization【0102】
+Terminal uploads message ID: 0x0102
+5.3.1 Format Of Device Authorization Message
+START byte Field Data type Description
+0 Authorization code STRING terminal reconnect to upload authorization code
+Table 5-2
+Device Authorization data example:
+7E01020004089022849248029F4A4C5854747E
+Index Value(HEX) Instruction
+1 7E packet header
+2 0102 Message ID
+3 0004 Message body ‘s attribute
+4 089022849248 Terminal ID
+5 029F Message’s serial number
+6 4A4C5854 Authorization code (No need to process)
+7 74 check code
+8 7E packet end
+Table 5-3
+========== PAGE 11 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 11 / 34
+5.3.2 Device Authorization Request- Platform Universal ACK example
+Device authorization data example
+7E01020004089022849248029F4A4C5854747E
+e.g.: 4A4C5854 is Message body, the data length is 0004 bytes
+Platform Universal ACK data example
+7E8001000508902284924802A0029F0102005C7E
+e.g.: 029F010200 is Message body, the data length is 0005 bytes
+Index Value(HEX) Instruction
+1 7E packet header
+2 8001 Message ID
+3 0005 Message body ‘s attribute. data content length
+4 089022849248 Terminal ID
+5 02A0 Message serial number
+6 029F Related Device authorization data’s serial number.
+This serial number must be correct.
+7 0102 Response data ID
+8 00
+Result：successfully
+9 5C Check code
+10 7E packet end
+Table 5-4
+5.4 Device Heartbeat Packet【0002】
+Message ID: 0x0002
+Server program need platform response【8001】to respond it
+Terminal sending heartbeat data example
+7E0002000000890228492480248687E
+Platform Universal ACK example
+7E8001000A089022849248024902480002006C7E
+========== PAGE 12 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 12 / 34
+5.5 GPS Data【0200】
+5.5.1 GPS Data 0x0200 Structure [Table 5-5]
+7E0200002C013654485438000D0000010000000003015A941F06CF58F6002600000000230619160
+840010400000000300119310116E102012A567E
+Index Message field details Value (HEX) Instruction
+1 Packet header 7E It is fixed to be 0x7E
+2 Message header Message ID 0200 It is fixed to be 0x0200
+3 Message body’s
+attribute
+002C Message data length
+4 Terminal ID 013654485438 Terminal ID,BCD code
+5 Message serial
+number
+000D Message serial number
+6 Message- basic
+location and basic
+information
+Alarm indicator 00000100 Details with reference. refer to Table 5-6
+7 Status indicator
+definition
+00000003 Details with reference. refer to Table 5-7
+8 Latitude 015A941F Convert 015A941F to decimal data
+(22713375/1000000)= 22.713375
+unit as degree,South/ north latitude indictor
+refer to Table 5-7
+9 Longitude 06CF58F6 Convert 06CF8A58 to decimal data
+(114252022/1000000)= 114.252022
+Unit as degree, east/west longitude indictor
+refer to Table 5-7
+10 Altitude 0026 Unit as meter
+11 Speed 0000 Unit as 0.1KM/H
+12 Direction 0000 Due North is 0, clockwise 0-359
+13 Date 230619 YYMMDD. 2023-06-19 GMT time
+14 Time 160840 HHNNSS. 16:08:40 GMT time
+15 Message- location
+extra message
+refer to Table 5-10
+Mileage 010400000000 DWORD, 1/10KM Unit is 0.1KM
+GSM Signal 300119 0x19=25,GSM Signal is 25
+GNSS Signal 310116 Number of positioning satellites,0x16=22
+Battery voltage E102012A unit 1/10V,0x01 0x2A=298/10=29.8V
+16 Check code 56 1 byte
+17 Packet end 7E Packet end is fixed to 0x7E
+Table 5-5
+========== PAGE 13 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 13 / 34
+5.5.2 GPS Data User-defined Item
+5.5.2.1 Alarm Indicator Define [Table 5-6]
+Terminal does send the GPS data in case of alarm and there is alarm mark in the location data, the platform
+acknowledges the alarm by Platform Universal ACK. Alarm indicator last till the alarm condition relieve, after
+the alarm condition relieve, terminal send GPS data with removing the alarm indicator.
+Bit Definition Handling instructions
+0 Value is 1: Emergency Alarm (SOS)
+Triggered after the alarm switch is touched, and cleared after
+receiving the response
+G106/G108/G109/EM200/G201 support
+1 Value is 1: Overspeed alarm The flag is maintained until the alarm condition is released
+2 Value is 1: Fatigue driving The flag is maintained until the alarm condition is released
+JT/T808-201115 / 33
+3 Reserve
+4 Value is 1: GNSS module failure The flag is maintained until the alarm condition is released
+5 Value is 1: GNSS antenna not connected or
+cut off The flag is maintained until the alarm condition is released
+6 Value is 1: GNSS antenna short circuit The flag is maintained until the alarm condition is released
+7 Value is 1: Low power supply voltage
+After the event occurs, the alarm will only be reported once
+Main power supply has low voltage:
+D100/W100/G102/G108/G109
+Internal battery has low battery power:
+G107, W100,W500,GL600
+8 Value is 1: The main power supply of the
+terminal is powered off
+After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109/EM200 support/EM6000 support
+9 Value is 1: Acc on event After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109/EM200 support
+10 Value is 1: Acc off event After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109/EM200 support
+11 Value is 1: The main power supply of the
+terminal is powered on
+After the event occurs, the alarm will only be reported once
+EM200,EM6000 support
+12 Leave the fortified area After the event occurs, the alarm will only be reported once
+G109 support
+13 Reserve
+14 Value is 1: Fatigue driving warning The flag is maintained until the alarm condition is released
+15 Value is 1: Vibration alarm After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109 support
+16 Value is 1: Flip/Fall down alarm After the event occurs, the alarm will only be reported once
+D100/G102/G107/G108/G109/W600 support
+========== PAGE 14 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 14 / 34
+17 Value is 1: Rapid acceleration After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109 support
+18 Value is 1: Cumulative driving overtime on
+the day The flag is maintained until the alarm condition is released
+19 Value is 1: Overtime parking The flag is maintained until the alarm condition is released
+20 Value is 1: Bird death After the event occurs, the alarm will only be reported once
+21 Value is 1: Birds take off After the event occurs, the alarm will only be reported once
+22 Reserve
+23 Reserve
+24 Reserve
+25 Reserve
+26 Reserve
+27 Value is 1: Illegal ignition After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109 support
+28 Value is 1: Towing alarm After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109 support
+29 Value is 1: Collision alarm The flag is maintained until the alarm condition is released
+D100/G102/G108/G109 support
+30 Harsh braking After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109 support
+31 Harsh turn After the event occurs, the alarm will only be reported once
+D100/G102/G108/G109 support
+Table 5-6
+5.5.2.2 Status indicator definition [Table 5-7]
+Bit Status
+0 0 Acc off；1 Acc on
+1 0 is not located; 1 is located
+2 0 north latitude; 1 south latitude
+3 0 east longitude; 1 west longitude
+4 The main power supply status: 1 is disconnected 12V/24V,0 is connected 12V/24V
+D100/G102/G108/G109/EM200/EM6000 support
+5 0 is 4G; 1 is WIFI
+6 Reserve
+7
+Value is 1: Low power supply voltage
+Main power supply has low voltage:
+D100/W100/G102/G108/G109
+Internal battery has low battery power:
+========== PAGE 15 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 15 / 34
+G107, W100,W500,GL600
+8 Reserve
+9 Reserve
+10 0: Normal/ Immobilizer Recover; 1: fuel pump cut/Remote immobilizer
+13
+0: Door 1 closed; 1: Door 1 open (front door) (right front door of passenger car)
+G108/G108P Enable AD2 as positive digital function
+Send command: (addevice,1,0)
+14 0: Door 2 closed; 1: Door 2 open (middle door)
+15 0: Door 3 closed; 1: Door 3 open (rear door) (right rear door of passenger car)
+16 0: Door 4 closed; 1: Door 4 open (driver's seat door) (left front door of passenger car)
+17
+1:Leave the fortified area
+0:In the fortified area,return to the fortified area or clear it with the clear this function command
+(lockpos,1,0,0) or reset fortified area command (lockpos,1,200,10,0,0)
+18 0: GPS satellites are not used for positioning; 1: GPS satellites are used for positioning.
+19 0: Do not use Beidou satellites for positioning; 1: Use Beidou satellites for positioning.
+20 0: GLONASS satellites are not used for positioning; 1: GLONASS satellites are used for positioning.
+21 0: Do not use Galileo satellites for positioning; 1: Use Galileo satellites for positioning.
+22 0: The vehicle is in a stopped state; 1: The vehicle is in a running state
+23-25 0: Not positioned 1: Non differential positioning 2: Differential positioning 3: Invalid PPS 4: Differential
+fix positioning 5: Differential float positioning 6: Estimating
+26 0: Normal data 1: Blind spot data
+27-28
+For PET1 & Hunting dog tracker (dog icon status)
+0: Still 1: Walking 2: Running
+Judging by GPS speed
+The default value for overspeed is greater than 9KM/H and lasts for more than 5 seconds.
+The judgment of walking and running status is based on speed
+>Running at 9KM/H
+>=3KM/H walking
+29 0: Dog not barking 1: Dog barking
+30 For PET1 & Hunting dog tracker (dog pointing alert)
+0:Stillness 1:Vibration
+31 Reserve
+Table 5-7
+5.5.2.3 Message-location extra message [Table 5-8]
+Field Data Type Description
+Additional Message ID BYTE Support extend multi Message ID; Before
+we use both 0x01 and 0x33
+========== PAGE 16 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 16 / 34
+Length of Additional Message BYTE
+Additional Message BYTE[n] Details
+Table 5-8
+Additional Message ID Length of Additional Message Description
+0x01 4 Mileage, DWORD, Unit is 0.1KM
+0x04 2 …Details, please refer to Table 5-10
+… … …Details, please refer to Table 5-10
+Table 5-9
+5.5.2.4 Extra message definition [Table 5-10]
+Byte Description: Byte1 to ByteN from left to right. Byte[1] Byte[2] …Byte[N]
+Bit Description: Bit0 to BitN from right to left. Bit[N]…Bit[1] Bit[0]
+Extra
+Message
+ID
+Extra
+Message
+Length
+Extra Message Description
+0x01 4 Mileage, DWORD, 1/10KM Unit is 0.1KM
+(G102,G106,G108,G108P,G109)
+0x02 2 Fuel, 2 bytes, One-way fuel analog data (G102,G106,G108,G108P)
+0x04 2
+Battery status, 2 bytes
+1st byte:
+0x00 (meaning: charger is connected)
+0x01 (meaning: charger is not connected)
+2nd byte: battery percentage (1-100)
+(G107,G109-MK)
+0x2B 4
+Fuel, 4 bytes, Two-way fuel analog data
+0x0000 (Not Installed),0xFFFE (Sensor failure)
+(G102,G106,G108,G108P)
+0x30 1 GSM Signal, 1 byte
+0x31 1 GNSS Signal, 1 byte, Number of positioning satellites
+0x40 11
+10001BFB2C2
+20001BFB2C2
+30001BFB2C2
+BYTE[1]:Event source:
+1: Sign in
+2: Sign out
+3: After sign in, then keep 3
+========== PAGE 17 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 17 / 34
+iButton ID: 10 Bytes, 0001BFB2C2 (The last 10 digits)
+RFID Tag ID: 10 Bytes,0005748237
+0x41 44
+*TE,35,0027,0438,8400,0027,0438,0780,0,2805#
+Header
+Version
+SmoothedLiter
+Smoothedheightvalue
+Signalstrength
+Event
+Hardwarestatus
+Realtimevolume
+Realtimeheightvalue
+Temperature
+Movingstatus
+Numberofeffectivesignals
+Dipangle
+Tail
+*TE 35 0027 0438 84 0 0 0027 0438 0780 0 28 05 #
+1 2 3 4 5 6 7 8 9 10 ⑪ ⑫ ⑬ ⑭
+① Header: *TE
+② Version: 35
+③ Smoothed Liter: 0027=2.7L, unit is 0.1L
+④ Smoothed height value: 0438 = 43.8mm, UL212 unit is 0.1mm, UL212-E unit is 1mm
+⑤ Signal strength: 84, The actual installation should be greater than 20
+⑥ Event: 0 Normal,6 Refuel,9 Siphon
+⑦ Hardware status: 0 normal,1 abnormal
+⑧ Realtime volume: 0027=2.7L, unit is 0.1 liter
+⑨ Realtime height value: 0438 = 43.8mm, UL212 unit is 0.1mm, UL212-E unit is 1mm
+⑩ Temperature: 0780, (780-400) * 0.1 = 38.0 Celsius degree
+⑪ Moving status: 0 static,1 moving
+⑫ Number of effective signals: 28, The actual installation should be greater than 20
+⑬ Dip angle: 05, Hexadecimal, need less than 11
+⑭ Tail: #
+0x50 2 Fuel, 2 bytes, One-way fuel analog data (G102,G106,G108,G108P)
+0x51 8
+Temperature (4 channels), 8 bytes, two bytes per channel, unit: 1/10 degree
+0xFFFB (Not Installed),0xFFFE (Sensor failure)
+(G102, G106, G108, G108P)
+0x52 1
+Forward and reverse rotation, 1 byte
+0: unknown;
+1: forward rotation (empty vehicle)
+2: reverse rotation (heavy vehicle);
+3: stop
+(G102, G106, G108, G108P)
+0x53 1+n*8
+Base station data:
+the first byte is the number of base stations, followed by n base station data; base
+station data: 0-1 MCC; 2 MNC; 3-4 LAC; 5-6 CELLID; 6 signal strength. 2G
+(G102, G106, G107, G108, G108P, W500)
+0x54 1+n*7 Wifi data:
+the number of wifi in the first byte, followed by n wifi data; WIFI data: 0-5 wifiMac;6
+========== PAGE 18 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 18 / 34
+Signal strength
+(G102, G106, G107, G108, G108P, W500, GL600)
+0x55 8 Load Sensor data, 8 bytes, unit: 1/10 kg
+(G102, G106, G108, G108P)
+0x56 2
+Battery percentage, BYTE [1], rang is 1-10 (0x01 - 0x0A)
+Rreserved, BYTE [2]
+(G107, W500)
+0x57
+8
+Byte 0: Reserved
+Byte 1: Bit0 vibration alarm
+Bit1: Pseudo base-station alarm
+Bytes 2-7: Reserved
+(AT08N)
+8
+State extension, 8 bytes
+0-1 bytes for alarm status
+2-3 bytes for switch status
+4-7 bytes Reserved:
+Alarm status:
+0x0001 Vibration alarm
+0x0002 Anti disassembly alarm (W600)
+0x0004 Cover opening alarm (W600)
+0x58 8
+Humidity (4 channels), 8 bytes, two bytes per channel, unit: 1/10 degree
+0xFFFB (Not Installed),0xFFFE (Sensor failure)
+(G102, G106, G108, G108P)
+0x5D 1+n*10
+Base station data:
+The first byte is the number of base stations, followed by n base station data;
+Base Station Data:
+0-1 MCC; 2 MNC; 3-4 LAC; 5-8 CELLID; 9 Signal Strength. 4G
+0x61 2 External voltage of battery products, 2-bytes, unit 1/100V
+(EM200)
+0x66 1 Lock Hall sensor status
+Sensor1,Sensor2,Sensor3,Sensor4,Sensor5 Compose 1 byte, Sensor5 is Motor controlled Hall sensor
+0x88 4 Working hours (hour meter), value in minutes with acc on
+(You can also send commands to configure using G-Sensor vibration as ACC state)
+0xD8 N
+D8 // Message ID
+4C // Length
+04 // Number of Slave locks
+008124050002 // Master Lock MAC
+00000000 // Master Lock RFID
+64 // Master Lock Battery Level
+000020E0 // Master Lock Status And Alarms
+004024050001 // Slave Lock 1 MAC
+========== PAGE 19 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 19 / 34
+00000000 // Slave Lock 1 RFID
+00 // Slave Lock 1 Battery Level
+00100000 // Slave Lock 1 Status And Alarms
+004024050002 // Slave Lock 2 MAC
+00000000 // Slave Lock 2 RFID
+00 // Slave Lock 2 Battery Level
+00100000 // Slave Lock 2 Status And Alarms
+000000000000 // Slave Lock 3 MAC
+00000000 // Slave Lock 3 RFID
+00 // Slave Lock 2 Battery Level
+00100000 // Slave Lock 3 Status And Alarms
+000000000000 // Slave Lock 4 MAC
+00000000 // Slave Lock 4 RFID
+00 // Slave Lock 4 Battery Level
+00100000 // Slave Lock 4 Status And Alarms
+Master Lock Status: Bit31 Bit30… Bit1 Bit0
+Bit0: Base Station Positioning Indicator // 0: GPS, 1: Base Station;
+Bit1: Enter Geo-fence alert // 0: Normal, 1: Enter Geo-fence;
+Bit2: Exit Geo-fence alert // 0: Normal, 1: Exit Geo-fence;
+Bit3: Lock rope tamper alert // 0: Normal, 1: Tamper;
+Bit4: Vibration alert // 0: Normal, 1: Remove;
+Bit5: ACK indicator // 0: Normal, 1: Need ACK;
+Bit6: Lock Rope status // 0: Unplugging, 1: Inserted;
+Bit7: Motor Lock status // 0: Unlock, 1: Locked;
+Bit8: Unlocking alert // 0: Normal, 1: Trigger;
+Bit9: Wrong password alert //0: Normal, 1: Trigger (Wrong >= 5 times);
+Bit10: Swiping unauthorized RFID key alert // 0: Normal, 1: Trigger;
+Bit11: Low battery alert // 0: Normal, 1: Trigger;
+Bit12: Back cover Opened alert // 0: Normal, 1: Trigger;
+Bit13: Back Cover status // 0: Opened, 1: Closed;
+Bit14: Motor fault alert // 0: Normal, 1: Trigger;
+Bit15 – Bit31 : Reserve // fixed at 0;
+Slave Lock Status and Events: Bit31 Bit30… Bit1 Bit0
+Bit0: LockRopeStatus // 0: Insert, 1: Pull out;
+Bit1: MotorStatus // 0: Lock, 1: Unlock;
+Bit2: BackCoverStatus // 0: Close, 1: Open;
+Bit3: ChargingStatus // 0: No Charging, 1: Charging;
+Bit4: MagnetStatus // 0: Normal, 1: Remove;
+========== PAGE 20 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 20 / 34
+Bit5 - Bit15: Reserve //;
+Bit16: SLockCutOff // 0: Normal, 1: Lock rope cut alarm;
+Bit17: SLockOpen // 0: Normal, 1: Unlock alarm;
+Bit18: SUnCoverBack // 0: Normal, 1: Back cap oper alarm;
+Bit19: Reserve //;
+Bit20: STimeOut // 0: Normal, 1: Slave does not report to master for at least 3 Mins;
+Bit21: Reserve //;
+Bit22: SSealTempered // 0: Normal, 1: Tempered;
+Bit23: SLockStuck // 0: Normal, 1: Motor is stuck;
+Bit24 - Bit31: Reserve //;
+(GL500C, GL600C, GL800C)
+0xD9 8
+D9 08 01 01 00C44313 00 00
+Even Source
+1 Byte
+1 indicates Swipe Authorized RFID key;
+2 indicates Swipe Unauthorized RFID key;
+3 indicates Swipe the vehicle ID blinding RFID key;
+4 indicates Unlock by Password from GPRS；
+5 indicates the device is automatically locked
+6 indicates Unlock by Password from Bluetooth
+Unlock successful/failed
+1 Byte
+1 means the RFID key or password is verified, unlocked
+successfully,
+0 means RFID key or password is not verified, refused to unlock
+Note: If <Even Source> is 2,3,5 ,this value is fixed to 0 .
+RFID key number
+4 Bytes
+The ID card number when swiping the card.
+Note: If the <Event Source> is 4 or 5, the value is 00000000.
+Password True/False
+1 Byte
+If the <Event Source> is 4, this value indicates whether the
+password is correct. If password is correct, it is 1, and for other
+types, it is fixed to 0.
+Input Wrong Password Times
+1 Byte
+If the <Event Source> is 4, this value indicates the number of
+consecutive password input errors. For other types, it is fixed to 0.
+(GL500C, GL600C, GL800C)
+0xE1 2
+battery voltage, 2-byte, unit 1/10V
+G107, W500,GL600 internal battery
+G102,G106 ,G108,G108P,G109,G109-MK detect external car’s battery voltage
+0xE2 10
+the bcd code of the SIM card information ICCID, 1 byte
+such as: 0x89 0x86 0x02 0xB2 0x01 0x14 0x40 0x08 0x11 0x03
+The corresponding SIM card is marked: 898602B2011440081103
+0xE3 1+n*6
+Accelerometer x, y, z axis data
+The first byte is the number of data, followed by the acceleration sensor data.
+Tentative second-level acquisition, all data pushed forward from the current time
+0xE4 4
+Ambient Light Sensor, Measurements: 0.01 lux to 83 k lux
+(Hexadecimal, magnified 100 times,after converting to decimal, it needs to be
+divided by 100)
+========== PAGE 21 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 21 / 34
+0xE5 2 Atmospheric pressure sensor,300 ... 1100 hPa
+(equiv.to +9000...-500 m above/below sea level)
+0xE7 3
+24 types alarm status,0xE7 packet alarm status bit definition
+Bit Alarm Definition Remark
+0 1: Lock rope cutting alarm
+1 1: Emergency unlocking alarm
+2 1: Tamper alarm
+3 1: Back cover opening alarm
+4 1: Vibration alarm
+5 1: Tilt alarm
+6 1: Flip over alarm
+7 1: High temperature alarm
+8 1: Low temperature alarm
+9 1: Hat removal alarm
+10 1: Silent alarm
+11 1: Drop alarm
+12 1: Fall alarm
+13 1: Impact alarm
+14 1: Climbing high warning
+15-23 Reserve
+0xE8 3
+24 types status,0xE8 packet switch status bit definition
+Bit Status Definition Remark
+0 1: Rotary switch open
+1 1: Motor release
+2 1: Lock lever open
+3 1: Lock rod cutting
+4 1: Lock rope cutting
+5 1: Back cover opening
+6 1: Shell opening
+7 1: Tamper
+8 1: Vibration, 0: Stationary
+9 1: Sleep mode
+10 1: Deep sleep mode
+11 1: GPS power off mode
+12 1: Device power off
+13 1: Firmware OTA in progress
+14-19 Reserve
+20-23 Network type
+2G:
+0: GSM
+2: UTRAN
+3: GSM W/EGPRS
+========== PAGE 22 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 22 / 34
+3G:
+4: UTRAN W/HSDPA
+5: UTRAN W/HSUPA
+6: UTRAN W/HSDPA and HSUPA
+4G:
+7: E-UTRAN
+8: UTRAN HSPA+
+5G:
+9
+0xE9 1 1-100 battery percentage.1 byte. The same as 0xEE
+(W600)
+0xEB 14
+Extended sub-ID length: BYTE, 2 bytes
+Extended sub-ID number: BYTE, 2 bytes
+Extended sub-id content: BYTES
+At present, the extended ID only supports 0x00B2, the ID length is 10 bytes, and it
+refers to the ICCID information of the SIM card.
+0xED 1+7*N
+1st byte: version+number of beacons
+first 4 bits, current version default 0, for future expansion;
+Last 4 bits, beacon Total number, from 0 to 16
+Beacon data starting from the second byte
+first version beacon data packet including MAC address and signal strength
+(MAC address 6 bytes, signal strength 1 byte)
+(W600)
+0xEE 1 1-100 battery percentage.1 byte
+(G107, W500, GL600)
+0xEF 1 Wired tracker interval battery voltage, 1-byte, unit 1/10V
+(G109)
+0xF0 N DTU transparent data transmission (maximum 128 bytes)
+(G108P)
+0xF1 4 Number of unlocks (GL600)
+0xF2 2
+The GL600 lock status
+Bit Define Description
+0 0: Lock open; 1: Lock closed
+4321 0000 indicates scheduled upload;
+0001 represents unlocking and uploading;
+0010 indicates locking and uploading;
+0011 indicates low power upload;
+0100 represents mobile upload;
+0101 indicates impact upload;
+Indicates the trigger reason
+for the upload of the location
+information. The scheduled
+upload is uploaded according
+to the time interval set by the
+user, and the unlock upload is
+triggered by the user's unlock
+========== PAGE 23 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 23 / 34
+in real time. The device should
+give priority to uploading data
+packets that are not
+scheduled to be uploaded.
+5 0: indicates operation;
+1: indicates stop operation;
+6 0: means discharging; 1: means charging;
+0xF4 2
+G109-MK Extend I/O Status & Alarm
+Bit Define Description
+0 IO1 Trigger Type: 0: Negative 1: Positive
+1 IO2 Trigger Type: 0: Negative 1: Positive
+2 reserve
+3 reserve
+4 reserve
+5 reserve
+6 IO1 Current Status: 0: NC 1: Triggered
+7 IO2 Current Status: 0: NC 1: Triggered
+8 reserve
+9 IO1 Alarm Status: 0: No alarm 1: In alarm
+10 IO2 Alarm Status: 0: No alarm 1: In alarm
+11 reserve
+12 reserve
+13 reserve
+14 reserve
+15 reserve
+0xF8 2 BYTE [2], the sound is collected to adc voltage value (PET1)
+0xFA 4
+BYTE[1], working mode: 0 normal 1 test 2 upgrade 3 shutdown
+BYTE[2], in shutdown mode, 0: normal shutdown 1: long-term static shutdown
+(PET1)
+0xFB 1
+BYTE[1]:Wake-up source:
+0x00: Unknown
+0x01: Boot up
+0x02: Light-sensitive(Light perception has the highest priority)
+0x03: Timing
+0x04: Shock
+0x05: Voice control
+(G107,W500,GL600,PET1)
+0xFC 15 IMEI, 38 36 36 36 3531 30 36 37 31 39 37 37 36 37 converts to 866651067197767
+0xFD 2
+Wired tracker internal battery voltage, 2 bytes, unit 1/10V
+BYTE [1], Wired tracker internal battery voltage
+BYTE [2], Wired tracker internal battery percentage
+(G109,G109-MK)
+========== PAGE 24 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 24 / 34
+0xFE N
+Custom Extended Data (Extended Alarm)
+Start byte field type of data description
+0 Extra Message ID Byte 0xFE
+1 Extra Message Length Byte
+2 Extended Mark Byte 0x7C
+Fixed value,do not
+process extended
+data without this
+flag
+3 ID 1 Byte
+4 Length 1 Byte
+5 Data 1 N
+6 ID 2 Byte
+7 Length 2 Byte
+8 Data 2 N
+5+N ID N Byte
+5+N+1 Length N Byte
+5+N+N Data N N
+ID Length Data
+0x01 4 Bytes Extended alarm information
+Extended alarm bit definition:
+bit Alarm Definition Remark
+0 rapid acceleration G102/G106/G108
+1 rapid deceleration G102/G106/G108
+2 sharp turn G102/G106/G108
+3 Collision G102/G106/G108
+4 Tamper
+5-31 Reserve
+Table 5-10
+You can use the assistant to configure which extension bytes are uploaded by the device,
+This screenshot will be modified accordingly after the extension byte commands is added.
+========== PAGE 25 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 25 / 34
+
+========== PAGE 26 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 26 / 34
+5.6 Send Command To Tracker【8300】
+Message ID:0x8300, send the command from Platform side.
+Start byte field data type description
+0 Type WORD We use 0x01
+1
+Command body
+BYTE[N] Support max length 1024 bytes
+refer to Table 5-17
+Table 5-11
+5.7 Tracker Reply Command To Server【0300】
+Message ID:0x0300
+Start byte field data type description
+0 Command body BYTE[N] Support max length 1024 bytes
+Table 5-12
+Example of Command Sending and Reply:
+Send To Tracker: 7E8300000A013654485438000001286375742C312C3129AC7E
+Tracker Reply: 7E030000090136544854380000286375742C312C31292E7E
+Index Value(HEX) Description
+1 7E Packet header
+2 8300 Message ID
+3 000A Message body ‘s attribute, the data here means the data length is 10 bytes.
+4 013654485438 Terminal ID
+5 0000 Message serial number
+6 01 transparent transmission type
+7 286375742C312C3129 transparent transmission data, convert to ASCII code is (cut,1,1)
+8 AC Check code
+9 7E Protocol end
+Index Value(HEX) Description
+1 7E Packet header
+2 0300 Message ID
+3 0009 Message body ‘s attribute, the data here means the data length is 10 bytes.
+4 013654485438 Terminal ID
+5 0000 Message serial number
+6 286375742C312C3129 transparent transmission data, convert to ASCII code is (cut,1,1)
+7 2E Check code
+8 7E Protocol end
+========== PAGE 27 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 27 / 34
+5.8 Server Download Data to Tracker【8900】
+Message ID:0x8900, platform send the transmission data to tracker.
+Start byte field data type description
+0 Type WORD refer to Table 5-15
+1 Command body BYTE[N] Support max length 1024 bytes
+Table 5-13
+5.9 Tracker Upload Data to Server【0900】
+Message ID:0x0900, tracker send the transmission data to platform.
+Start byte field data type description
+0 Type WORD refer to Table 5-15
+1 Command body BYTE[N] Support max length 1024 bytes
+Table 5-14
+Index Transparent message
+type
+Value(HEX) Description
+1 GNSS Data 0x00 Detailed positioning data of GNSS module
+2 IC Card Information 0x0B The upload message of the IC card information of the road
+transportation certificate is 64Byte, and the download message is
+24Byte. The timeout for the transparent transmission of the road
+transportation certificate IC card authentication is 30 seconds.
+After timeout, do not resend.
+3 COM1 0x41 Serial port 1 transparent message
+4 COM2 0x42 Serial port 2 transparent message
+5 BMS1 0xB2
+6 Driving Report Data 0xF8 Driving report data transmission
+7 BMS2 0xF9
+8 User defined 0xFA-0xFF
+Table 5-15
+========== PAGE 28 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 28 / 34
+0x8900 Example 1：
+7E890000120890228492480001332A4D30322C30382C3132333435363738230B7E
+Index Value(HEX) Description
+1 7E Packet header
+2 8900 Message ID
+3 0012 Message body ‘s attribute, the data here means the data length is 12 bytes.
+4 019912345678 Terminal ID
+5 0001 Message serial number
+6 41 transparent transmission type
+0x41 mean’s COM1
+0x42 mean’s COM2
+7 48656C6C6F205
+76F726C6421
+transparent transmission data, convert to ASCII code is Hello World!
+8 0B Check code
+9 7E Protocol end
+Table 5-16
+========== PAGE 29 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 29 / 34
+5.10 Raw Data Example
+Red: Tracker Upload Data to Server
+Green: Server Send Data or Reply Data to Tracker
+7E0102000A01365448543800044D6F6269636F6D496F54707E --- Tracker upload authorization data
+7E8001000501365448543800050004010200C17E --- Server ACK
+7E0200002C013654485438000D0000010000000003015A941F06CF58F600260000000023061916084001040
+0000000300119310116E102012A567E --- tracker upload GPS data
+7E8001000501365448543800090008020000C07E --- Server ACK
+7E8300000A013654485438000001286375742C312C3129AC7E --- Server send command to tracker
+7E030000090136544854380000286375742C312C31292E7E --- Tracker reply command to server
+7E8001000501365448543800010000030000C17E --- Server ACK
+7E --- Packet header
+0200 --- Message ID
+002C --- Message data length
+013654485438 --- Terminal ID,BCD code
+000D --- Message serial number
+00000100 --- Alarm indicator
+00000003 --- Status indicator definition
+015A941F --- Latitude
+06CF58F6 --- Longitude
+0026 --- Altitude Unit as meter
+0000 --- Speed Unit as 0.1KM/H
+0000 --- Direction Due North is 0, clockwise 0-359
+230619 --- Date YYMMDD
+160840 --- Time HHNNSS
+01 04 00000000 --- Mileage, DWORD, 1/10KM Unit is 0.1KM
+30 01 19 --- GSM Signal, 1 byte
+31 01 16 --- GNSS Signal, 1 byte, Number of positioning satellites
+E1 02 012A --- battery voltage, 2-byte, unit 1/10V
+56 --- Check code
+7E --- Packet end
+========== PAGE 30 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 30 / 34
+7E --- Packet header
+8300 --- Message ID
+000A --- Message data length
+013654485438 -- Terminal ID,BCD code
+0000 --- Message serial number
+01 --- Type fixed 0x01
+286375742C312C3129 --- command body, convert hexadecimal to ASCII is (cut,1,1)
+AC --- Check code
+7E --- Packet end
+7E --- Packet header
+0300 --- Message ID
+0009 --- Message data length
+013654485438 -- Terminal ID,BCD code
+0000 --- Message serial number
+286375742C312C3129 --- command body, convert hexadecimal to ASCII is (cut,1,1)
+2E --- Check code
+7E --- Packet end
+========== PAGE 31 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 31 / 34
+5.11 Common Commands [Table 5-17]
+For more commands, please refer to Mobicom Telematics Command List Excel file.
+Command & Description Format is ‘ (commandKey,0/1,param1,param2,paramN) ’,word case doesn't matter.
+Command contains left ‘(’ and right ‘)’ parentheses!!!
+1. Query/Set Vibration Mode:
+Vibration wakes up default value is 80mg (can be modified), after wake up the max working time is 180
+seconds
+Mode A: Vibration upload interval, minimum 5S, maximum 180S, turning point upload, GPS on
+Mode B: No vibration upload interval, minimum 600S, maximum 86400S (24 hours), GPS off
+Query: (move,0)
+Reply: (move,0,5,600) vibration upload interval 5 seconds, no vibration upload interval 600 seconds
+Set: (move,1,5,600) vibration upload interval 5 seconds, no vibration upload interval 600 seconds
+Reply: (move,1,5,600)
+2. Query/Set Timing Mode:
+GPS is turned on by default, A & B mode can be superimposed
+Mode A: Fixed time point mode, 0-24 hours (0,1,2,3....24)
+Mode B: Period grouping mode, start time, end time, upload times
+Mode A set command: (time,1,a,0,1,2,3,4,5,6,7,8,9,10,11,12,13...23) - fixed time point mode 0-23 hours
+Reply: (time,1,a,0,1,2,3,4....23)
+Mode A clear command: (time,1,a) - fixed time point mode clear
+Reply: (time,1,a)
+Mode B time period set 1: (time,1,b,1,0800,0900,4) --start time 8:00, end time 9:00, upload times 4 times
+Reply: (time,1,b,1,0800,0900,4)
+Mode B time period set 2: (time,1,b,2,1300,1400,5) --start time 13:00, end time 14:00, upload times 5 times
+Reply: (time,1,b,2,1300,1400,5)
+Clear all time points in B mode: (time,1,b) --Clear all time points in time period grouping mode
+Reply: (time,1,b)
+Query: (time,0)
+Reply: (time,0,a,0,1,2,3,4....23;b1,0800,0900,4;b2,1300,1400,5)
+3. Query/Set time zone
+Set:(timezone,1,8:00)
+========== PAGE 32 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 32 / 34
+Reply: (timezone,1,8:00)
+Set:(timezone,1,-9:30)
+Reply: (timezone,1,-9:30)
+Query: (timezone,0)
+Reply: (timezone,0,-9:30)
+4. Query/Set G-Sensor detects vibration judgment conditions
+Can adjust the G-Sensor judgment conditions for detecting vibration wake-up
+Set:(gsensor,1,123,10)
+Reply: (gsensor,1,123,10)
+The first parameter is the mg value, and the second parameter is the number of consecutive occurrences
+greater than this mg value.
+Query: (gsensor,0)
+Reply: (gsensor,0,123,10)
+5. Query/Set APN
+Set: (apn,1,cmnet,user,password)
+Reply: (apn,1,cmnet,user,password)
+Query: (apn,0)
+Reply: (apn,0,cmnet,user,password)
+6. Query/Set Main/Backup IP
+1 mean’s main IP/Domain, 2 mean’s backup
+Set IP1: (ip,1,1,168.192.18.18,8003)
+Reply: (ip,1,1,168.192.18.18,8003)
+Set Domain name 2: (ip,1,2,xxxx.com,8004)
+Reply: (ip,1,2,xxxx.com,8004)
+Query: (ip,0)
+Reply: (ip,0,1,168.192.18.18,8003;2,xxxx.com,8004)
+7. Query/Set Tracker’s ID
+Set ID: (id,1,019912345678)
+Reply: (id,1,019912345678)
+Query ID: (id,0)
+Reply:(id,0,019912345678)
+8. Query general parameters
+Reply format: (all,0,*commandKey1,params1*commandKey2,params2....)
+E.g. IP port,ID,APN,TCP/UDP,ACC upload interval,backup battery,main battery,online status,time zone,GSM
+signal,GPS signal, number of satellites, software version....
+Query: (all,0) or (all)
+========== PAGE 33 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 33 / 34
+Reply:
+(all,0,*move,0,5,600*timezone,0,9:30*apn,0,cmnet,user,password*ip,0,1,168.192.18.18,8003;2,xxxx.com,800
+4*net ,0,tcp*id,0,019912345678)
+9. Reboot
+Reset: (reboot,1)
+Reply: (reboot,1)
+10. Factory reset
+Factory reset: (reset,1)
+Reply: (reset,1)
+11. Remote upgrade OTA
+Remote upgrade: (OTA,1,148.70.5.127,8122)
+Reply: (OTA,1,148.70.5.127,8122)
+12. version query
+Version query: (ver,0)
+Reply: (ver,0,version number)
+13. JT808 protocol extended additional information customization, in 0x0200 upload data
+Set : (808ext,1,01,04,30,31,56,E1,FE)
+Reply: (808ext,1,01,04,30,31,E1,EF,F6,FB)
+Query: (808ext,0)
+Reply: (808ext,0,30,31,E1,EF,F6,FB)
+Table 5-17
+5.12 The second configuration parameter method 0x8103
+Message ID: 0x8103, set the parameter message body data format as shown:
+Start byte field data type description
+0 total number of parameters WORD
+1 parameter list parameter format refers to Table 5-19
+Table 5-18 Parameter message body data format
+Field Data type Description
+parameter ID DWord Parameter ID definition and description refers to Table 5-20
+Parameter
+length
+Byte
+Parameter
+value
+If it is a multi-value parameter, use multiple parameter items with
+the same ID in the message
+Table 5-19 parameter format
+========== PAGE 34 ==========
+Mobicom Telematics Products Protocol
+© 2019 Shenzhen Mobicom Telematics Co.,Ltd. All Rights Reserved. 34 / 34
+Parameter ID Data type Description
+0x0001 DWORD Tracker heartbeat sending interval, in seconds (s)
+0x0002 DWORD TCP message response timeout, in seconds (s)
+0x0003 DWORD TCP message retransmission times
+0x0010 STRING APN
+0x0011 STRING APN username
+0x0012 STRING APN password
+0x0013 STRING Server IP or domain
+0x0018 DWORD Server TCP port
+0x0029 DWORD Reporting upload interval, in seconds (s), >0
+0x0055 DWORD Maximum speed (km/h)
+0x0056 DWORD Overspeed duration, in seconds (s)
+0x0080 DWORD Vehicle odometer reading, 1/10km
+Table 5-20 Parameter ID definition and description
