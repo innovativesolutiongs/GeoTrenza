@@ -10,6 +10,10 @@ const GpsAlarm = require("./entities/GpsAlarm");
 const GpsStatus = require("./entities/GpsStatus");
 const GpsExtraLocation = require("./entities/GpsExtraLocation");
 const GpsExtraDatamsg = require("./entities/GpsExtraDatamsg");
+const Position = require("./entities/Position");
+const Event = require("./entities/Event");
+const Truck = require("./entities/Truck");
+const Geofence = require("./entities/Geofence");
 
 
 
@@ -20,9 +24,9 @@ const AppDataSource = new DataSource({
   username: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "12345",
   database: process.env.DB_NAME || "gpstracker",
-  synchronize: true,
+  synchronize: false,
   logging: false,
-  entities: [Device, GpsData, Heartbeat, CommandReply, GpsAlarm, GpsStatus, GpsExtraLocation, GpsExtraDatamsg],
+  entities: [Device, GpsData, Heartbeat, CommandReply, GpsAlarm, GpsStatus, GpsExtraLocation, GpsExtraDatamsg, Position, Event, Truck, Geofence],
 });
 
 AppDataSource.initialize()
