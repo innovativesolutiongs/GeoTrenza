@@ -53,8 +53,16 @@ async function handle0x0200(packetHex, connState, deps) {
 
   const queryRunner = dataSource.createQueryRunner();
   await queryRunner.connect();
+  const txStart = Date.now();
   try {
     await executeTransaction(positionRow, events, deviceId, queryRunner);
+    deps.logger.info('position_handled', {
+      terminalId: packetData.terminalId,
+      deviceId,
+      packet_size_bytes: Math.floor(packetHex.length / 2),
+      event_count_emitted: events.length,
+      transaction_duration_ms: Date.now() - txStart,
+    });
     return buildAck(serialNo, originalMsgId, 0);
   } catch (err) {
     return handleError(err, deps, serialNo, originalMsgId, connState);

@@ -276,4 +276,27 @@ describe('handle0x0200', () => {
     expect(passedDeviceId).toBe(bigId);
     expect(typeof passedDeviceId).toBe('string');
   });
+
+  test('15. success path logs position_handled with packet_size_bytes, event_count_emitted, transaction_duration_ms', async () => {
+    detectOneShotEvents.mockReturnValue({
+      events: [{ kind: 'alarm.sos' }, { kind: 'ignition.on' }],
+      maintainedBitsSet: [],
+    });
+    const logger = makeLogger();
+    const queryRunner = makeQueryRunner();
+    const deps = makeDeps({ logger, queryRunner });
+    const packetHex = 'a'.repeat(200); // 100 bytes
+
+    await handle0x0200(packetHex, { deviceId: '42' }, deps);
+
+    const successLogs = logger.info.mock.calls.filter(([key]) => key === 'position_handled');
+    expect(successLogs).toHaveLength(1);
+    const payload = successLogs[0][1];
+    expect(payload.deviceId).toBe('42');
+    expect(payload.packet_size_bytes).toBe(100);
+    expect(payload.event_count_emitted).toBe(2);
+    expect(payload.transaction_duration_ms).toBeGreaterThanOrEqual(0);
+    expect(typeof payload.transaction_duration_ms).toBe('number');
+    expect(payload).toHaveProperty('terminalId');
+  });
 });
