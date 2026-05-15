@@ -3,7 +3,6 @@ require("reflect-metadata");
 const { DataSource } = require("typeorm");
 
 const Device = require("./entities/Device");
-const Heartbeat = require("./entities/Heartbeat");
 const CommandReply = require("./entities/CommandReply");
 const Position = require("./entities/Position");
 const Event = require("./entities/Event");
@@ -21,7 +20,7 @@ const AppDataSource = new DataSource({
   database: process.env.DB_NAME || "gpstracker",
   synchronize: false,
   logging: false,
-  entities: [Device, Heartbeat, CommandReply, Position, Event, Truck, Geofence],
+  entities: [Device, CommandReply, Position, Event, Truck, Geofence],
 });
 
 AppDataSource.initialize()

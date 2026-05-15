@@ -7,6 +7,7 @@ const AppDataSource = require("./ormconfig");
 const parse0900 = require("./utils/trackeruplorddatatoserver");
 const generateAck = require("./utils/ackGenerator");
 const handle0x0102 = require("./handlers/handle0x0102");
+const handle0x0002 = require("./handlers/handle0x0002");
 const handle0x0200 = require("./handlers/handle0x0200");
 const logger = require("./utils/logger");
 
@@ -17,7 +18,6 @@ console.log("🚀 Starting TCP Server...");
 AppDataSource.initialize().then(() => {
 
   const deviceRepo = AppDataSource.getRepository("Device");
-  const heartbeatRepo = AppDataSource.getRepository("Heartbeat");
   const commandRepo = AppDataSource.getRepository("CommandReply");
 
   const handlerDeps = {
@@ -72,17 +72,22 @@ AppDataSource.initialize().then(() => {
           }
 
 
-          /* ================= HEARTBEAT ================= */
+          /* ================= HEARTBEAT (0x0002 handler — Stage 2 Phase C) ================= */
 
-          case "0002":
+          case "0002": {
 
-            await heartbeatRepo.save({
-              terminalId
+            const serialNo = parseInt(hex.substring(22, 26), 16);
+
+            handlerAck = await handle0x0002(hex, connState, {
+              ...handlerDeps,
+              serialNo,
+              originalMsgId: 0x0002,
             });
 
-            console.log("💓 Heartbeat Saved");
+            console.log("💓 0x0002 handled, ack result:", handlerAck.result);
 
             break;
+          }
 
 
           /* ================= GPS DATA (0x0200 orchestrator — Stage 2 Phase B Step 4) ================= */
