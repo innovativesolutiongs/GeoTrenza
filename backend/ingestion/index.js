@@ -4,34 +4,32 @@ require("reflect-metadata");
 const net = require("net");
 const AppDataSource = require("./ormconfig");
 
-const parseLocation = require("./utils/gpsParser");
-const parseAlarm = require("./utils/alarmParser");
-const parseStatus = require("./utils/statusParser");
-const parseLocationExtra = require("./utils/locationExtraParser");
-const parseExtraMessages = require("./utils/extraMessageParser");
 const parse0900 = require("./utils/trackeruplorddatatoserver");
 const generateAck = require("./utils/ackGenerator");
-const buildCommand = require("./utils/commandBuilder");
-const COMMANDS = require("./utils/trackerCommands");
+const handle0x0102 = require("./handlers/handle0x0102");
+const handle0x0002 = require("./handlers/handle0x0002");
+const handle0x0200 = require("./handlers/handle0x0200");
+const logger = require("./utils/logger");
 
 const PORT = process.env.TCP_PORT || 5000;
 
-console.log("🚀 Starting TCP Server...");
+logger.info("server_starting");
 
 AppDataSource.initialize().then(() => {
 
   const deviceRepo = AppDataSource.getRepository("Device");
-  const gpsRepo = AppDataSource.getRepository("GpsData");
-  const heartbeatRepo = AppDataSource.getRepository("Heartbeat");
   const commandRepo = AppDataSource.getRepository("CommandReply");
-  const alarmRepo = AppDataSource.getRepository("GpsAlarm");
-  const statusRepo = AppDataSource.getRepository("GpsStatus");
-  const extraRepo = AppDataSource.getRepository("GpsExtraLocation");
-  const extraDataRepo = AppDataSource.getRepository("GpsExtraDatamsg");
+
+  const handlerDeps = {
+    dataSource: AppDataSource,
+    deviceRepo,
+    logger,
+  };
 
   const server = net.createServer((socket) => {
 
-    console.log("📡 Device Connected:", socket.remoteAddress);
+    logger.info("device_connected", { remoteAddress: socket.remoteAddress });
+    const connState = { deviceId: undefined };
 
     socket.on("data", async (data) => {
 
@@ -39,191 +37,71 @@ AppDataSource.initialize().then(() => {
 
         const hex = data.toString("hex").toUpperCase();
 
-        console.log("📦 Packet:", hex);
-
         const messageId = hex.substring(2, 6);
         const terminalId = hex.substring(10, 22);
 
-        console.log("MessageID:", messageId);
-        console.log("Terminal:", terminalId);
+        logger.info("packet_received", { messageId, terminalId, hex });
+
+        let handlerAck;
+        let shouldClose = false;
 
         switch (messageId) {
 
-          /* ================= AUTHORIZATION ================= */
+          /* ================= AUTHORIZATION (0x0102 handler — Stage 2 Phase B Step 5) ================= */
 
-          case "0102":
+          case "0102": {
 
-            const authCode = hex.substring(26, hex.length - 4);
+            const serialNo = parseInt(hex.substring(22, 26), 16);
 
-            await deviceRepo.save({
-              terminalId,
-              authCode
+            handlerAck = await handle0x0102(hex, connState, {
+              ...handlerDeps,
+              serialNo,
+              originalMsgId: 0x0102,
             });
 
-            console.log("✅ Device Saved");
+            if (handlerAck.result !== 0) {
+              shouldClose = true;
+            }
 
             break;
+          }
 
 
-          /* ================= HEARTBEAT ================= */
+          /* ================= HEARTBEAT (0x0002 handler — Stage 2 Phase C) ================= */
 
-          case "0002":
+          case "0002": {
 
-            await heartbeatRepo.save({
-              terminalId
+            const serialNo = parseInt(hex.substring(22, 26), 16);
+
+            handlerAck = await handle0x0002(hex, connState, {
+              ...handlerDeps,
+              serialNo,
+              originalMsgId: 0x0002,
             });
-
-            console.log("💓 Heartbeat Saved");
 
             break;
+          }
 
 
-          /* ================= GPS DATA ================= */
+          /* ================= GPS DATA (0x0200 orchestrator — Stage 2 Phase B Step 4) ================= */
 
-          case "0200":
+          case "0200": {
 
-            const gps = parseLocation(hex);
+            const serialNo = parseInt(hex.substring(22, 26), 16);
 
-            if (!gps) {
-              console.log("GPS parse failed");
-              return;
-            }
-
-            await gpsRepo.save({
-              terminalId,
-              latitude: gps.latitude,
-              longitude: gps.longitude,
-              speed: gps.speed
+            handlerAck = await handle0x0200(hex, connState, {
+              ...handlerDeps,
+              serialNo,
+              originalMsgId: 0x0200,
             });
-
-            console.log("📍 GPS Saved");
-
-            // DISABLED 2026-05-04 — auto engine-cut at speed > 100 is a safety risk.
-            // To be redesigned in Stage 4 with: (1) explicit operator confirmation,
-            // (2) geofence trigger, (3) speed = 0 requirement before sending
-            // immobilizer command, (4) opt-in by customer.
-            /*
-            if (gps.speed > 100) {
-
-              const packet = buildCommand(terminalId, COMMANDS.ENGINE_LOCK);
-
-              socket.write(packet);
-
-              console.log("🚨 Speed Limit! Engine Lock Command Sent");
-
-            }
-            */
-
-
-            /* ---------- ALARM PARSE ---------- */
-
-            const alarmHex = hex.substring(26, 34);
-            const alarmValue = parseInt(alarmHex, 16);
-
-            const alarms = parseAlarm(alarmValue);
-
-            for (const alarm of alarms) {
-
-              await alarmRepo.save({
-                terminal_id: terminalId,
-                alarm_type: alarm
-              });
-
-            }
-
-            console.log("🚨 Alarm Detected:", alarms);
-
-
-            /* ---------- STATUS PARSE ---------- */
-
-            const statusHex = hex.substring(34, 42);
-            const statusValue = parseInt(statusHex, 16);
-
-            const statuses = parseStatus(statusValue);
-
-            for (const status of statuses) {
-
-              await statusRepo.save({
-                terminal_id: terminalId,
-                status_type: status
-              });
-
-            }
-
-            console.log("📊 Status:", statuses);
-
-
-            /* ---------- EXTRA LOCATION DATA ---------- */
-
-            const extras = parseLocationExtra(hex);
-
-            await extraRepo.save({
-
-              terminal_id: terminalId,
-
-              mileage: extras.mileage || null,
-
-              fuel: extras.fuel || null,
-
-              speed_ext: extras.extendedSpeed || null,
-
-              alarm_event: extras.alarmEvent || null,
-
-              signal_strength: extras.gsmSignal || null,
-
-              satellites: extras.satellites || null,
-
-              battery_voltage: extras.batteryVoltage || null,
-
-              temperature: extras.temperature || null,
-
-              fuel_sensor: extras.fuelSensor || null,
-
-              external_voltage: extras.externalVoltage || null
-
-            });
-
-            console.log("📊 Extra Location Saved:", extras);
-
-            /* ---------- EXTRA Message DATA ---------- */
-
-
-            const extraMsg = parseExtraMessages(hex);
-
-            await extraDataRepo.save({
-
-              terminal_id: terminalId,
-
-              message_id: extraMsg.message_id || null,
-
-              mileage: extraMsg.mileage || null,
-
-              fuel: extraMsg.fuel || null,
-
-              gsm_signal: extraMsg.gsm_signal || null,
-
-              gnss_signal: extraMsg.gnss_signal || null,
-
-              battery_voltage: extraMsg.battery_voltage || null,
-
-              battery_percent: extraMsg.battery_percent || null,
-
-              temperature: extraMsg.temperature || null,
-
-              humidity: extraMsg.humidity || null,
-
-              raw_extra: extraMsg.raw || null
-
-            });
-
-            console.log("📊 Extra Data Saved:", extraMsg);
 
             break;
+          }
 
 
           /* ================= COMMAND REPLY ================= */
 
-          case "0300":
+          case "0300": {
 
             const commandData = hex.substring(26, hex.length - 4);
 
@@ -232,14 +110,15 @@ AppDataSource.initialize().then(() => {
               command: commandData
             });
 
-            console.log("📨 Command Reply Saved");
+            logger.info("command_reply_saved", { terminalId });
 
             break;
+          }
 
 
           /* ================= TRANSPARENT DATA ================= */
 
-          case "0900":
+          case "0900": {
 
             const transparent = parse0900(hex);
 
@@ -248,16 +127,17 @@ AppDataSource.initialize().then(() => {
               command: transparent.data
             });
 
-            console.log("📡 Transparent Data Saved");
+            logger.info("transparent_data_saved", { terminalId });
 
             break;
+          }
 
 
           /* ================= SERVER COMMAND ================= */
 
           case "8300":
 
-            console.log("📤 Command Packet");
+            logger.info("server_command_packet", { terminalId });
 
             break;
 
@@ -266,46 +146,52 @@ AppDataSource.initialize().then(() => {
 
           case "8900":
 
-            console.log("⬇️ Download Packet");
+            logger.info("download_packet", { terminalId });
 
             break;
 
 
           default:
 
-            console.log("❓ Unknown Packet");
+            logger.warn("unknown_packet", { messageId, terminalId });
 
         }
 
 
         /* ================= ACK ================= */
 
-        const ack = generateAck(hex);
+        const ackResult = handlerAck ? handlerAck.result : 0;
+        const ack = generateAck(hex, ackResult);
 
         socket.write(ack);
 
-        console.log("📤 ACK Sent:", ack.toString("hex"));
+        logger.info("ack_sent", { messageId, result: ackResult, ackHex: ack.toString("hex") });
+
+        if (shouldClose) {
+          logger.info("connection_closed_auth_failed", { remoteAddress: socket.remoteAddress });
+          socket.end();
+        }
 
       } catch (err) {
 
-        console.log("⚠️ Packet Error:", err);
+        logger.error("packet_error", { message: err && err.message, stack: err && err.stack });
 
       }
 
     });
 
     socket.on("error", (err) => {
-      console.log("Socket Error:", err.message);
+      logger.error("socket_error", { message: err && err.message });
     });
 
     socket.on("close", () => {
-      console.log("❌ Device Disconnected");
+      logger.info("device_disconnected", { remoteAddress: socket.remoteAddress });
     });
 
   });
 
   server.listen(PORT, () => {
-    console.log(`✅ TCP Server running on port ${PORT}`);
+    logger.info("server_listening", { port: PORT });
   });
 
 });
