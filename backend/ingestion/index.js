@@ -6,6 +6,7 @@ const AppDataSource = require("./ormconfig");
 
 const parse0900 = require("./utils/trackeruplorddatatoserver");
 const generateAck = require("./utils/ackGenerator");
+const handle0x0102 = require("./handlers/handle0x0102");
 const handle0x0200 = require("./handlers/handle0x0200");
 const logger = require("./utils/logger");
 
@@ -45,23 +46,30 @@ AppDataSource.initialize().then(() => {
         console.log("Terminal:", terminalId);
 
         let handlerAck;
+        let shouldClose = false;
 
         switch (messageId) {
 
-          /* ================= AUTHORIZATION ================= */
+          /* ================= AUTHORIZATION (0x0102 handler — Stage 2 Phase B Step 5) ================= */
 
-          case "0102":
+          case "0102": {
 
-            const authCode = hex.substring(26, hex.length - 4);
+            const serialNo = parseInt(hex.substring(22, 26), 16);
 
-            await deviceRepo.save({
-              terminalId,
-              authCode
+            handlerAck = await handle0x0102(hex, connState, {
+              ...handlerDeps,
+              serialNo,
+              originalMsgId: 0x0102,
             });
 
-            console.log("✅ Device Saved");
+            console.log("🔑 0x0102 handled, ack result:", handlerAck.result);
+
+            if (handlerAck.result !== 0) {
+              shouldClose = true;
+            }
 
             break;
+          }
 
 
           /* ================= HEARTBEAT ================= */
@@ -160,6 +168,11 @@ AppDataSource.initialize().then(() => {
         socket.write(ack);
 
         console.log("📤 ACK Sent:", ack.toString("hex"));
+
+        if (shouldClose) {
+          console.log("🔒 Closing connection (auth rejected)");
+          socket.end();
+        }
 
       } catch (err) {
 
