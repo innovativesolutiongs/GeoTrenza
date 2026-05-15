@@ -63,3 +63,53 @@ If either of us breaks the agreement (Claude makes claims without checking, Isha
 ## Living document
 
 This agreement is not fixed. As we learn what works and what doesn't, we update it. Changes go through commit history so we can see how the working pattern evolved.
+
+---
+
+## Operating Mode Revision — 2026-05-15
+
+The original working agreement reflected a careful mode appropriate for shared codebases with active users. GeoTrenza is pre-launch with no live fleet, no real customer data, and feature-branch work where regressions get caught by tests in seconds. The original agreement's verification discipline was over-applied and added hours of friction without catching real problems.
+
+This section updates the operating mode to match the actual risk profile.
+
+### Principles
+
+1. **Pre-launch risk tolerance.** Cost of breaking something on a feature branch is "fix forward in 10 minutes." Cost of constant verification is hours adding up to days. Move fast. Trust tests.
+
+2. **Trust the tests.** If tests pass, ship. If they break, fix forward. Don't add verification steps that duplicate what tests already cover.
+
+3. **No mid-stream approval gates within a sub-step.** Claude Code reads, writes, tests, commits, and pushes in one prompt cycle. Approval only at architectural decision points where there are real consequences I (Claude in conversation) can't predict.
+
+4. **Act on known information, don't double-check.** If something is established in the conversation, in committed docs, or in memory, use it. Don't ask Claude Code to re-verify what's already known.
+
+5. **Answers are direct.** When I'm answering questions, I give the answer plus key reasoning. Not exhaustive analysis of every angle. If Ishar wants more depth, he asks.
+
+### Exceptions where the old discipline still applies
+
+These contexts retain the original verification rigor because "fix forward" is harder:
+
+1. **Production-touching changes.** Migrations against gps_services, EC2 deploys, anything that mutates state the team can't easily roll back. Verify state before, after, and with care.
+
+2. **Cutover work (Phase D).** The transition from legacy ingestion to v2 ingestion in production. One-way door.
+
+3. **Session resume.** First action of a new session always verifies filesystem state to catch drift (commits, branch state, working tree). Cheap, catches real surprises.
+
+4. **Genuinely unknown territory.** When a decision involves something I don't actually know — e.g., how a third-party library behaves, what a specific Postgres error code class includes — ask once, not repeatedly.
+
+### What this changes in practice
+
+- Claude Code's reads, writes, tests, commits within a single sub-step happen without pause for Ishar approval. Approval comes at sub-step boundaries (or when a real design question surfaces), not at every Bash call.
+- I (Claude in conversation) stop demanding Claude Code "show me before commit" / "verify before edit" / "let's pause and check X" unless there's a real reason. The default is "go."
+- Documentation pauses are still valuable at logical checkpoints (end of sub-step, end of step, end of session). Those stay.
+- The session log discipline stays — end-of-session log captures the day's work durably.
+
+### What this does NOT change
+
+- The "anything substantive goes to docs/" principle. Decisions, design rationale, and learnings still land in docs.
+- The per-commit-per-sub-step granularity for bisect/revert.
+- The end-of-session log discipline.
+- The bigint-as-string convention and other established code patterns.
+
+### Original agreement remains valid
+
+The original working agreement above remains the foundation. This revision changes the operating mode (how fast we move within the agreement) without changing the underlying values (verify when stakes are high, write down what matters, treat each other with care).
