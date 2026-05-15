@@ -2,7 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'geotrenza-ingestion',
-      script: 'backend/ingestion/index.js',
+      script: 'index.js',
+      cwd: '/var/www/html/gps.geotrenza.com/backend',
       instances: 1,
       autorestart: true,
       watch: false,
