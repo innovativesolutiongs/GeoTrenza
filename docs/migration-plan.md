@@ -53,7 +53,9 @@ A note on time estimates: these are **rough developer-weeks** assuming one engin
 
 ---
 
-## Stage 2 — Migrate ingestion to new schema
+## Stage 2 — Migrate ingestion to new schema *(✅ complete — 2026-05-15)*
+
+Closed via merge commit `b1658d8`. v2 ingestion live on EC2 and verified end-to-end with simulator-driven test on 2026-05-15 — see `docs/session-logs/2026-05-15.md` postscript for proof points (auth + heartbeat + position rows landing correctly, structured pino logs, transaction durations 4–11ms).
 
 **Goal.** Make the ingestion service write to the new tables, fix the parser bugs that have been silently dropping data, and add the protocol features the dashboard will need (extended alarms, IMEI, battery percent).
 
