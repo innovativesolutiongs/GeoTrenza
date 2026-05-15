@@ -4,15 +4,10 @@ require("reflect-metadata");
 const net = require("net");
 const AppDataSource = require("./ormconfig");
 
-const parseLocation = require("./utils/gpsParser");
-const parseAlarm = require("./utils/alarmParser");
-const parseStatus = require("./utils/statusParser");
-const parseLocationExtra = require("./utils/locationExtraParser");
-const parseExtraMessages = require("./utils/extraMessageParser");
 const parse0900 = require("./utils/trackeruplorddatatoserver");
 const generateAck = require("./utils/ackGenerator");
-const buildCommand = require("./utils/commandBuilder");
-const COMMANDS = require("./utils/trackerCommands");
+const handle0x0200 = require("./handlers/handle0x0200");
+const logger = require("./utils/logger");
 
 const PORT = process.env.TCP_PORT || 5000;
 
@@ -21,17 +16,19 @@ console.log("🚀 Starting TCP Server...");
 AppDataSource.initialize().then(() => {
 
   const deviceRepo = AppDataSource.getRepository("Device");
-  const gpsRepo = AppDataSource.getRepository("GpsData");
   const heartbeatRepo = AppDataSource.getRepository("Heartbeat");
   const commandRepo = AppDataSource.getRepository("CommandReply");
-  const alarmRepo = AppDataSource.getRepository("GpsAlarm");
-  const statusRepo = AppDataSource.getRepository("GpsStatus");
-  const extraRepo = AppDataSource.getRepository("GpsExtraLocation");
-  const extraDataRepo = AppDataSource.getRepository("GpsExtraDatamsg");
+
+  const handlerDeps = {
+    dataSource: AppDataSource,
+    deviceRepo,
+    logger,
+  };
 
   const server = net.createServer((socket) => {
 
     console.log("📡 Device Connected:", socket.remoteAddress);
+    const connState = { deviceId: undefined };
 
     socket.on("data", async (data) => {
 
@@ -46,6 +43,8 @@ AppDataSource.initialize().then(() => {
 
         console.log("MessageID:", messageId);
         console.log("Terminal:", terminalId);
+
+        let handlerAck;
 
         switch (messageId) {
 
@@ -78,150 +77,22 @@ AppDataSource.initialize().then(() => {
             break;
 
 
-          /* ================= GPS DATA ================= */
+          /* ================= GPS DATA (0x0200 orchestrator — Stage 2 Phase B Step 4) ================= */
 
-          case "0200":
+          case "0200": {
 
-            const gps = parseLocation(hex);
+            const serialNo = parseInt(hex.substring(22, 26), 16);
 
-            if (!gps) {
-              console.log("GPS parse failed");
-              return;
-            }
-
-            await gpsRepo.save({
-              terminalId,
-              latitude: gps.latitude,
-              longitude: gps.longitude,
-              speed: gps.speed
+            handlerAck = await handle0x0200(hex, connState, {
+              ...handlerDeps,
+              serialNo,
+              originalMsgId: 0x0200,
             });
 
-            console.log("📍 GPS Saved");
-
-            // DISABLED 2026-05-04 — auto engine-cut at speed > 100 is a safety risk.
-            // To be redesigned in Stage 4 with: (1) explicit operator confirmation,
-            // (2) geofence trigger, (3) speed = 0 requirement before sending
-            // immobilizer command, (4) opt-in by customer.
-            /*
-            if (gps.speed > 100) {
-
-              const packet = buildCommand(terminalId, COMMANDS.ENGINE_LOCK);
-
-              socket.write(packet);
-
-              console.log("🚨 Speed Limit! Engine Lock Command Sent");
-
-            }
-            */
-
-
-            /* ---------- ALARM PARSE ---------- */
-
-            const alarmHex = hex.substring(26, 34);
-            const alarmValue = parseInt(alarmHex, 16);
-
-            const alarms = parseAlarm(alarmValue);
-
-            for (const alarm of alarms) {
-
-              await alarmRepo.save({
-                terminal_id: terminalId,
-                alarm_type: alarm
-              });
-
-            }
-
-            console.log("🚨 Alarm Detected:", alarms);
-
-
-            /* ---------- STATUS PARSE ---------- */
-
-            const statusHex = hex.substring(34, 42);
-            const statusValue = parseInt(statusHex, 16);
-
-            const statuses = parseStatus(statusValue);
-
-            for (const status of statuses) {
-
-              await statusRepo.save({
-                terminal_id: terminalId,
-                status_type: status
-              });
-
-            }
-
-            console.log("📊 Status:", statuses);
-
-
-            /* ---------- EXTRA LOCATION DATA ---------- */
-
-            const extras = parseLocationExtra(hex);
-            const extraMsg = parseExtraMessages(hex);
-
-            // Most fields below come from parseLocationExtra (extras).
-            // Four fields (alarm_event, temperature, fuel_sensor,
-            // external_voltage) come from parseExtraMessages (extraMsg)
-            // because parseLocationExtra doesn't decode those TLV IDs.
-            // alarm_event remains effectively NULL — no parser emits
-            // alarmEvent today (TLV 0x14 unimplemented). See
-            // STAGE_2_KNOWN_BUGS.md Bug 5.
-            await extraRepo.save({
-
-              terminal_id: terminalId,
-
-              mileage: extras.mileage ?? null,
-
-              fuel: extras.fuel ?? null,
-
-              speed_ext: extras.extendedSpeed ?? null,
-
-              alarm_event: extraMsg.alarmEvent ?? null,
-
-              signal_strength: extras.gsmSignal ?? null,
-
-              satellites: extras.satellites ?? null,
-
-              battery_voltage: extras.batteryVoltage ?? null,
-
-              temperature: extraMsg.temperature ?? null,
-
-              fuel_sensor: extraMsg.fuelSensor ?? null,
-
-              external_voltage: extraMsg.externalVoltage ?? null
-
-            });
-
-            console.log("📊 Extra Location Saved:", extras);
-
-            /* ---------- EXTRA Message DATA ---------- */
-
-
-
-            // Bug 7 fix: dropped 4 reads (message_id, gnss_signal, humidity,
-            // raw) — no parser emits them — and case-fixed 3 (gsm_signal,
-            // battery_voltage, battery_percent → camelCase) to match
-            // parseExtraMessages's output. See STAGE_2_KNOWN_BUGS.md Bug 7.
-            await extraDataRepo.save({
-
-              terminal_id: terminalId,
-
-              mileage: extraMsg.mileage ?? null,
-
-              fuel: extraMsg.fuel ?? null,
-
-              gsm_signal: extraMsg.gsmSignal ?? null,
-
-              battery_voltage: extraMsg.batteryVoltage ?? null,
-
-              battery_percent: extraMsg.batteryPercent ?? null,
-
-              temperature: extraMsg.temperature ?? null
-
-            });
-
-            console.log("📊 Extra Data Saved:", extraMsg);
+            console.log("📍 0x0200 handled, ack result:", handlerAck.result);
 
             break;
+          }
 
 
           /* ================= COMMAND REPLY ================= */
@@ -283,7 +154,8 @@ AppDataSource.initialize().then(() => {
 
         /* ================= ACK ================= */
 
-        const ack = generateAck(hex);
+        const ackResult = handlerAck ? handlerAck.result : 0;
+        const ack = generateAck(hex, ackResult);
 
         socket.write(ack);
 
