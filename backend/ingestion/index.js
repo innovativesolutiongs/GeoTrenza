@@ -13,7 +13,7 @@ const logger = require("./utils/logger");
 
 const PORT = process.env.TCP_PORT || 5000;
 
-console.log("🚀 Starting TCP Server...");
+logger.info("server_starting");
 
 AppDataSource.initialize().then(() => {
 
@@ -28,7 +28,7 @@ AppDataSource.initialize().then(() => {
 
   const server = net.createServer((socket) => {
 
-    console.log("📡 Device Connected:", socket.remoteAddress);
+    logger.info("device_connected", { remoteAddress: socket.remoteAddress });
     const connState = { deviceId: undefined };
 
     socket.on("data", async (data) => {
@@ -37,13 +37,10 @@ AppDataSource.initialize().then(() => {
 
         const hex = data.toString("hex").toUpperCase();
 
-        console.log("📦 Packet:", hex);
-
         const messageId = hex.substring(2, 6);
         const terminalId = hex.substring(10, 22);
 
-        console.log("MessageID:", messageId);
-        console.log("Terminal:", terminalId);
+        logger.info("packet_received", { messageId, terminalId, hex });
 
         let handlerAck;
         let shouldClose = false;
@@ -61,8 +58,6 @@ AppDataSource.initialize().then(() => {
               serialNo,
               originalMsgId: 0x0102,
             });
-
-            console.log("🔑 0x0102 handled, ack result:", handlerAck.result);
 
             if (handlerAck.result !== 0) {
               shouldClose = true;
@@ -84,8 +79,6 @@ AppDataSource.initialize().then(() => {
               originalMsgId: 0x0002,
             });
 
-            console.log("💓 0x0002 handled, ack result:", handlerAck.result);
-
             break;
           }
 
@@ -102,15 +95,13 @@ AppDataSource.initialize().then(() => {
               originalMsgId: 0x0200,
             });
 
-            console.log("📍 0x0200 handled, ack result:", handlerAck.result);
-
             break;
           }
 
 
           /* ================= COMMAND REPLY ================= */
 
-          case "0300":
+          case "0300": {
 
             const commandData = hex.substring(26, hex.length - 4);
 
@@ -119,14 +110,15 @@ AppDataSource.initialize().then(() => {
               command: commandData
             });
 
-            console.log("📨 Command Reply Saved");
+            logger.info("command_reply_saved", { terminalId });
 
             break;
+          }
 
 
           /* ================= TRANSPARENT DATA ================= */
 
-          case "0900":
+          case "0900": {
 
             const transparent = parse0900(hex);
 
@@ -135,16 +127,17 @@ AppDataSource.initialize().then(() => {
               command: transparent.data
             });
 
-            console.log("📡 Transparent Data Saved");
+            logger.info("transparent_data_saved", { terminalId });
 
             break;
+          }
 
 
           /* ================= SERVER COMMAND ================= */
 
           case "8300":
 
-            console.log("📤 Command Packet");
+            logger.info("server_command_packet", { terminalId });
 
             break;
 
@@ -153,14 +146,14 @@ AppDataSource.initialize().then(() => {
 
           case "8900":
 
-            console.log("⬇️ Download Packet");
+            logger.info("download_packet", { terminalId });
 
             break;
 
 
           default:
 
-            console.log("❓ Unknown Packet");
+            logger.warn("unknown_packet", { messageId, terminalId });
 
         }
 
@@ -172,33 +165,33 @@ AppDataSource.initialize().then(() => {
 
         socket.write(ack);
 
-        console.log("📤 ACK Sent:", ack.toString("hex"));
+        logger.info("ack_sent", { messageId, result: ackResult, ackHex: ack.toString("hex") });
 
         if (shouldClose) {
-          console.log("🔒 Closing connection (auth rejected)");
+          logger.info("connection_closed_auth_failed", { remoteAddress: socket.remoteAddress });
           socket.end();
         }
 
       } catch (err) {
 
-        console.log("⚠️ Packet Error:", err);
+        logger.error("packet_error", { message: err && err.message, stack: err && err.stack });
 
       }
 
     });
 
     socket.on("error", (err) => {
-      console.log("Socket Error:", err.message);
+      logger.error("socket_error", { message: err && err.message });
     });
 
     socket.on("close", () => {
-      console.log("❌ Device Disconnected");
+      logger.info("device_disconnected", { remoteAddress: socket.remoteAddress });
     });
 
   });
 
   server.listen(PORT, () => {
-    console.log(`✅ TCP Server running on port ${PORT}`);
+    logger.info("server_listening", { port: PORT });
   });
 
 });
