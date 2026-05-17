@@ -2,28 +2,30 @@ import { Entity, PrimaryGeneratedColumn, Column } from "typeorm";
 
 @Entity({ name: "trucks" })
 export class Trucks {
+  @PrimaryGeneratedColumn({ name: "id", type: "bigint" })
+  id: string;
 
-  @PrimaryGeneratedColumn({ name: "ID", type: "integer" })
-  ID: number;
+  @Column({ name: "account_id", type: "bigint" })
+  account_id: string;
 
-  @Column({ name: "srNO", type: "integer", default: 0 })
-  srNO: number;
+  @Column({ name: "registration_no", type: "text" })
+  registration_no: string;
 
-  @Column({ name: "title", type: "varchar", length: 100 })
-  title: string;
+  @Column({ name: "name", type: "text", nullable: true })
+  name: string | null;
 
-  @Column({ name: "slug", type: "varchar", length: 100 })
-  slug: string;
+  @Column({ name: "model", type: "text", nullable: true })
+  model: string | null;
 
-  @Column({ name: "code", type: "varchar", length: 100 })
-  code: string;
+  @Column({ name: "vin", type: "text", nullable: true })
+  vin: string | null;
 
-  @Column({ name: "statusID", type: "varchar", length: 100, nullable: true })
-  statusID?: string;
+  @Column({ name: "status", type: "text" })
+  status: string;
 
-  @Column({ name: "userID", type: "varchar", length: 100, nullable: true })
-  userID?: string;
+  @Column({ name: "created_at", type: "timestamptz" })
+  created_at: Date;
 
-  @Column({ name: "logID", type: "varchar", length: 50, nullable: true })
-  logID?: string;
+  @Column({ name: "updated_at", type: "timestamptz" })
+  updated_at: Date;
 }
