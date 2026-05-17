@@ -9,6 +9,8 @@ import changePasswordReducer from "./changePasswordSlice";
 import truckReducer from "./truckSlice";
 import deviceReducer from "./deviceSlice";
 import allocationReducer from "./allocationslice";
+import positionReducer from "./positionSlice";
+import eventReducer from "./eventSlice";
 
 
 
@@ -22,6 +24,8 @@ const rootReducer = combineReducers({
     truck: truckReducer,
     device: deviceReducer,
     allocation: allocationReducer,
+    position: positionReducer,
+    event: eventReducer,
 });
 
 const persistConfig = {
