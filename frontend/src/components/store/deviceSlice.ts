@@ -13,6 +13,7 @@ export interface Device {
   auth_code: string | null;
   firmware_version: string | null;
   model: string | null;
+  device_type: "WIRED" | "MAGNETIC_BATTERY" | "ASSET_TRACKER";
   last_seen_at: string | null;
   created_at: string;
   updated_at: string;

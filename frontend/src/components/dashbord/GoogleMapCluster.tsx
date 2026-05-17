@@ -3,6 +3,7 @@ import {
   MapContainer,
   TileLayer,
   Marker,
+  Polyline,
   Popup,
   useMap,
 } from "react-leaflet";
@@ -27,6 +28,10 @@ export interface MarkerType {
 
 interface MapProps {
   markers: MarkerType[];
+  // Optional polyline overlay (lat/lng pairs). Used by the truck detail page
+  // to draw a recent path; livelocation doesn't pass this.
+  path?: [number, number][];
+  height?: number | string;
 }
 
 /* ================= DEFAULT CENTER (PUNJAB) ================= */
@@ -80,7 +85,7 @@ const FitBoundsOnce: React.FC<{ markers: MarkerType[] }> = ({ markers }) => {
 
 /* ================= COMPONENT ================= */
 
-const GoogleMapCluster: React.FC<MapProps> = ({ markers = [] }) => {
+const GoogleMapCluster: React.FC<MapProps> = ({ markers = [], path, height = 500 }) => {
   const icons = useMemo(
     () => ({
       ACTIVE_MOVING: buildIcon("ACTIVE_MOVING"),
@@ -96,7 +101,7 @@ const GoogleMapCluster: React.FC<MapProps> = ({ markers = [] }) => {
     <MapContainer
       center={defaultCenter}
       zoom={8}
-      style={{ width: "100%", height: "500px" }}
+      style={{ width: "100%", height: typeof height === "number" ? `${height}px` : height }}
     >
       <TileLayer
         attribution="© OpenStreetMap contributors"
@@ -104,6 +109,10 @@ const GoogleMapCluster: React.FC<MapProps> = ({ markers = [] }) => {
       />
 
       <FitBoundsOnce markers={markers} />
+
+      {path && path.length > 1 && (
+        <Polyline positions={path} pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.8 }} />
+      )}
 
       <MarkerClusterGroup chunkedLoading>
         {markers.map((marker) => {

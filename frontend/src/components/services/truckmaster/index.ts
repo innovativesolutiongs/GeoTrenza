@@ -17,6 +17,13 @@ export interface TruckPayload {
 
 const getAllTrucks = () => getRequest("/trucks");
 
+const getTruckById = (id: string) => getRequest(`/trucks/${id}`);
+
+const getTruckEvents = (id: string, from: string, to: string) =>
+  getRequest(
+    `/trucks/${id}/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+  );
+
 const createTruck = (payload: TruckPayload) =>
   postRequest("/trucks", payload);
 
@@ -28,6 +35,8 @@ const deleteTruck = (id: string) =>
 
 export default {
   getAllTrucks,
+  getTruckById,
+  getTruckEvents,
   createTruck,
   updateTruck,
   deleteTruck,
