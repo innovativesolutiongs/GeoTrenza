@@ -10,6 +10,9 @@ import { Position } from "./entity/position";
 import { Event } from "./entity/event";
 import { Geofence } from "./entity/geofence";
 import { Driver } from "./entity/driver";
+import { AlertRule } from "./entity/alertRule";
+import { Alert } from "./entity/alert";
+import { AlertSubscription } from "./entity/alertSubscription";
 
 const {
   DB_HOST,
@@ -32,7 +35,7 @@ export const AppDataSource = new DataSource({
   username: DB_USERNAME,
   password: DB_PASSWORD,
   database: DB_NAME,
-  entities: [User, Vehicles, Account, Devices, allocation, Position, Event, Geofence, Driver],
+  entities: [User, Vehicles, Account, Devices, allocation, Position, Event, Geofence, Driver, AlertRule, Alert, AlertSubscription],
   migrations: ["src/migration/*.ts"],
   logging: true,
   // Schema management: synchronize is OFF. Migrations under src/migration/ are now

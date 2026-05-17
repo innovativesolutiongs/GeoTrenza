@@ -23,6 +23,15 @@ export class Geofence {
   @Column({ name: "active", type: "boolean" })
   active: boolean;
 
+  @Column({ name: "description", type: "text", nullable: true })
+  description: string | null;
+
+  @Column({ name: "color", type: "varchar", length: 16 })
+  color: string;
+
+  @Column({ name: "deleted_at", type: "timestamptz", nullable: true })
+  deleted_at: Date | null;
+
   @Column({ name: "created_at", type: "timestamptz" })
   created_at: Date;
 
