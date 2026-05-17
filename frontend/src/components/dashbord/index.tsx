@@ -60,27 +60,27 @@ const Dashboard: React.FC = () => {
   ).length;
 
   const allocatedDeviceIDs = allocations.map((a: any) =>
-    Number(a.deviceID)
+    String(a.deviceID)
   );
 
   const filteredDevices =
     userTY === "AD"
       ? devices
       : devices.filter((device: any) =>
-        allocatedDeviceIDs.includes(Number(device.device_ID))
+        allocatedDeviceIDs.includes(String(device.id))
       );
 
   /* ================= FILTER TRUCKS ================= */
 
   const allocatedTruckIDs = allocations.map((a: any) =>
-    Number(a.truckID)
+    String(a.truckID)
   );
 
   const filteredTrucks =
     userTY === "AD"
       ? trucks
       : trucks.filter((truck: any) =>
-        allocatedTruckIDs.includes(Number(truck.ID))
+        allocatedTruckIDs.includes(String(truck.id))
       );
 
   /* ================= MAP MARKERS ================= */

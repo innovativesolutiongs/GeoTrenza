@@ -3,13 +3,19 @@ import type { PayloadAction } from "@reduxjs/toolkit";
 import deviceService from "../services/deviceService";
 import type { DevicePayload } from "../services/deviceService";
 
-
+// v2 devices row shape. bigint columns (id, account_id, truck_id) arrive as strings.
 export interface Device {
-  device_ID: number;
-  deviceNo: string;
-  deviceName: string;
-  statusID: string;
-  userID?: number;
+  id: string;
+  terminal_id: string;
+  imei: string | null;
+  account_id: string | null;
+  truck_id: string | null;
+  auth_code: string | null;
+  firmware_version: string | null;
+  model: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface DeviceState {
@@ -26,13 +32,11 @@ const initialState: DeviceState = {
   success: false,
 };
 
-// ====== ASYNC THUNKS ======
 export const fetchDevices = createAsyncThunk<Device[]>(
   "device/fetchAll",
   async (_, { rejectWithValue }) => {
     try {
       const res = await deviceService.getAllDevices();
-      // console.log(res.data)
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.message || "Failed to fetch devices");
@@ -40,12 +44,14 @@ export const fetchDevices = createAsyncThunk<Device[]>(
   }
 );
 
+// Mutation thunks remain so existing form components compile. Backend /api/devices
+// is GET-only in Stage 3, so these will reject at runtime. Forms are hidden via
+// ENABLE_MUTATIONS until Stage 4 reintroduces write endpoints.
 export const createDevice = createAsyncThunk<Device, DevicePayload>(
   "device/create",
   async (deviceData, { rejectWithValue }) => {
     try {
       const res = await deviceService.createDevice(deviceData);
-      console.log(res.data)
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err?.response?.data?.message || "Failed to create device");
@@ -55,7 +61,7 @@ export const createDevice = createAsyncThunk<Device, DevicePayload>(
 
 export const updateDevice = createAsyncThunk<
   Device,
-  { id: number; data: Partial<DevicePayload> }
+  { id: string; data: Partial<DevicePayload> }
 >("device/update", async ({ id, data }, { rejectWithValue }) => {
   try {
     const res = await deviceService.updateDevice(id, data);
@@ -65,19 +71,18 @@ export const updateDevice = createAsyncThunk<
   }
 });
 
-export const deleteDevice = createAsyncThunk<number, number>(
+export const deleteDevice = createAsyncThunk<string, string>(
   "device/delete",
-  async (device_ID, { rejectWithValue }) => {
+  async (id, { rejectWithValue }) => {
     try {
-      await deviceService.deleteDevice(device_ID);
-      return device_ID;
+      await deviceService.deleteDevice(id);
+      return id;
     } catch (err: any) {
       return rejectWithValue(err.message || "Failed to delete device");
     }
   }
 );
 
-// ====== SLICE ======
 const deviceSlice = createSlice({
   name: "device",
   initialState,
@@ -90,7 +95,6 @@ const deviceSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // FETCH
       .addCase(fetchDevices.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -105,7 +109,6 @@ const deviceSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // CREATE
       .addCase(createDevice.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -122,7 +125,6 @@ const deviceSlice = createSlice({
         state.success = false;
       })
 
-      // UPDATE
       .addCase(updateDevice.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -131,7 +133,7 @@ const deviceSlice = createSlice({
       .addCase(updateDevice.fulfilled, (state, action: PayloadAction<Device>) => {
         state.loading = false;
         state.devices = state.devices.map((d) =>
-          d.device_ID === action.payload.device_ID ? action.payload : d
+          d.id === action.payload.id ? action.payload : d
         );
         state.success = true;
       })
@@ -141,15 +143,14 @@ const deviceSlice = createSlice({
         state.success = false;
       })
 
-      // DELETE
       .addCase(deleteDevice.pending, (state) => {
         state.loading = true;
         state.error = null;
         state.success = false;
       })
-      .addCase(deleteDevice.fulfilled, (state, action: PayloadAction<number>) => {
+      .addCase(deleteDevice.fulfilled, (state, action: PayloadAction<string>) => {
         state.loading = false;
-        state.devices = state.devices.filter((device) => device.device_ID !== action.payload);
+        state.devices = state.devices.filter((d) => d.id !== action.payload);
         state.success = true;
       })
       .addCase(deleteDevice.rejected, (state, action) => {

@@ -5,27 +5,25 @@ import {
   deleteRequest,
 } from "../api";
 
-/* ========= PAYLOAD ========= */
+// Form payload shape — write endpoints are removed in Stage 3 backend, so these
+// calls reject at runtime. Mutation UI is hidden via ENABLE_MUTATIONS.
 export interface TruckPayload {
   truckNo: string;
   regoNo: string;
   modelNo: string;
   statusID: string;
-  userID?: number; // ✅ FIXED
+  userID?: number;
 }
-
-
-/* ========= API CALLS ========= */
 
 const getAllTrucks = () => getRequest("/trucks");
 
 const createTruck = (payload: TruckPayload) =>
   postRequest("/trucks", payload);
 
-const updateTruck = (id: number, payload: TruckPayload) =>
+const updateTruck = (id: string, payload: TruckPayload) =>
   putRequest(`/trucks/${id}`, payload);
 
-const deleteTruck = (id: number) =>
+const deleteTruck = (id: string) =>
   deleteRequest(`/trucks/${id}`);
 
 export default {

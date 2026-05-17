@@ -34,14 +34,14 @@ const TruckMaster = () => {
   /* ================= MATCH ALLOCATED TRUCKS ================= */
 
   const allocatedTruckIDs = allocations.map((a: any) =>
-    Number(a.truckID)
+    String(a.truckID)
   );
 
   const filteredTrucks =
     userTY === "AD"
       ? trucks
-      : trucks.filter((truck: any) =>
-          allocatedTruckIDs.includes(Number(truck.ID))
+      : trucks.filter((truck) =>
+          allocatedTruckIDs.includes(String(truck.id))
         );
 
   /* ================= PAGINATION ================= */
@@ -63,7 +63,7 @@ const TruckMaster = () => {
 
   /* ================= DELETE ================= */
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     const toastId = toast.info(
       <div>
         <div>Delete this truck?</div>
@@ -138,9 +138,9 @@ const TruckMaster = () => {
               <thead>
                 <tr>
                   <th style={th}>Sr No</th>
-                  <th style={th}>Truck No</th>
-                  <th style={th}>Rego No</th>
-                  <th style={th}>Model No</th>
+                  <th style={th}>Name</th>
+                  <th style={th}>Registration No</th>
+                  <th style={th}>Model</th>
                   <th style={thCenter}>Status</th>
 
                   {userTY === "AD" && <th style={thCenter}>Edit</th>}
@@ -158,26 +158,34 @@ const TruckMaster = () => {
                 ) : (
                   paginatedTrucks.map((truck, index) => (
                     <tr
-                      key={truck.ID}
+                      key={truck.id}
                       style={{
                         backgroundColor:
                           index % 2 === 0 ? "#ffffff" : "#f8f9fa",
                       }}
                     >
-                      <td style={td}>{truck.srNO}</td>
-                      <td style={td}>{truck.truckNo}</td>
-                      <td style={td}>{truck.regoNo}</td>
-                      <td style={td}>{truck.modelNo}</td>
+                      <td style={td}>{(page - 1) * pageSize + index + 1}</td>
+                      <td style={td}>{truck.name ?? "—"}</td>
+                      <td style={td}>{truck.registration_no}</td>
+                      <td style={td}>{truck.model ?? "—"}</td>
 
                       <td style={tdCenter}>
-                        <span style={activeStatus}>Active</span>
+                        <span
+                          style={
+                            truck.status === "active"
+                              ? activeStatus
+                              : { color: "#dc3545", fontWeight: 600 }
+                          }
+                        >
+                          {truck.status}
+                        </span>
                       </td>
 
                       {userTY === "AD" && (
                         <>
                           <td style={tdCenter}>
                             <Link
-                              to={`/edit-truck/${truck.ID}`}
+                              to={`/edit-truck/${truck.id}`}
                               state={{ truck }}
                               style={{ textDecoration: "none" }}
                             >
@@ -188,7 +196,7 @@ const TruckMaster = () => {
                           <td style={tdCenter}>
                             <button
                               style={deleteBtn}
-                              onClick={() => handleDelete(truck.ID)}
+                              onClick={() => handleDelete(truck.id)}
                             >
                               🗑️
                             </button>

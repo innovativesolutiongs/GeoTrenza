@@ -3,16 +3,17 @@ import type { PayloadAction } from "@reduxjs/toolkit";
 import truckService from "../services/truckmaster";
 import type { TruckPayload } from "../services/truckmaster";
 
-/* ================= TYPES ================= */
-
+// v2 trucks row shape. bigint columns (id, account_id) arrive as strings.
 export interface Truck {
-  ID: number;
-  truckNo: number;
-  regoNo: number;
-  modelNo: number;
-  statusID: number;
-  userID: number;
-  srNO: number;
+  id: string;
+  account_id: string;
+  registration_no: string;
+  name: string | null;
+  model: string | null;
+  vin: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface TruckState {
@@ -29,14 +30,11 @@ const initialState: TruckState = {
   success: false,
 };
 
-/* ================= FETCH ================= */
-
 export const fetchTrucks = createAsyncThunk<Truck[]>(
   "truck/fetchAll",
   async (_, { rejectWithValue }) => {
     try {
       const res = await truckService.getAllTrucks();
-      // console.log(res.data)
       return res.data;
     } catch (err: any) {
       return rejectWithValue(
@@ -46,8 +44,8 @@ export const fetchTrucks = createAsyncThunk<Truck[]>(
   }
 );
 
-/* ================= CREATE ================= */
-
+// Mutation thunks: backend /api/trucks is GET-only in Stage 3 — these reject at
+// runtime. Forms gated by ENABLE_MUTATIONS until Stage 4.
 export const createTruck = createAsyncThunk<Truck, TruckPayload>(
   "truck/create",
   async (payload, { rejectWithValue }) => {
@@ -62,18 +60,13 @@ export const createTruck = createAsyncThunk<Truck, TruckPayload>(
   }
 );
 
-/* ================= UPDATE ================= */
-
 export const updateTruck = createAsyncThunk<
   Truck,
-  { id: number; payload: TruckPayload },
+  { id: string; payload: TruckPayload },
   { rejectValue: string }
 >("truck/update", async ({ id, payload }, { rejectWithValue }) => {
   try {
     const res = await truckService.updateTruck(id, payload);
-
-    console.log("UPDATED FROM SERVER:", res.data);
-
     return res.data;
   } catch (err: any) {
     return rejectWithValue(
@@ -82,10 +75,7 @@ export const updateTruck = createAsyncThunk<
   }
 });
 
-
-/* ================= DELETE ================= */
-
-export const deleteTruck = createAsyncThunk<number, number>(
+export const deleteTruck = createAsyncThunk<string, string>(
   "truck/delete",
   async (id, { rejectWithValue }) => {
     try {
@@ -99,8 +89,6 @@ export const deleteTruck = createAsyncThunk<number, number>(
   }
 );
 
-/* ================= SLICE ================= */
-
 const truckSlice = createSlice({
   name: "truck",
   initialState,
@@ -113,8 +101,6 @@ const truckSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-
-      /* ===== FETCH ===== */
       .addCase(fetchTrucks.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -129,7 +115,6 @@ const truckSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      /* ===== CREATE ===== */
       .addCase(createTruck.pending, (state) => {
         state.loading = true;
         state.success = false;
@@ -144,35 +129,24 @@ const truckSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      /* ===== UPDATE ===== */
       .addCase(updateTruck.pending, (state) => {
         state.loading = true;
       })
-
-    builder.addCase(updateTruck.fulfilled, (state, action) => {
-      const index = state.trucks.findIndex(
-        (truck) => truck.ID === action.payload.ID
-      );
-
-      if (index !== -1) {
-        state.trucks[index] = action.payload;
-      }
-    })
-
+      .addCase(updateTruck.fulfilled, (state, action: PayloadAction<Truck>) => {
+        const index = state.trucks.findIndex((t) => t.id === action.payload.id);
+        if (index !== -1) state.trucks[index] = action.payload;
+      })
       .addCase(updateTruck.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })
 
-      /* ===== DELETE ===== */
       .addCase(deleteTruck.pending, (state) => {
         state.loading = true;
       })
-      .addCase(deleteTruck.fulfilled, (state, action) => {
+      .addCase(deleteTruck.fulfilled, (state, action: PayloadAction<string>) => {
         state.loading = false;
-        state.trucks = state.trucks.filter(
-          (t) => t.ID !== action.payload
-        );
+        state.trucks = state.trucks.filter((t) => t.id !== action.payload);
       })
       .addCase(deleteTruck.rejected, (state, action) => {
         state.loading = false;

@@ -36,10 +36,10 @@ const EditTruck = () => {
     useEffect(() => {
         if (truck) {
             setForm({
-                truckNo: truck.truckNo || "",
-                regoNo: truck.regoNo || "",
-                modelNo: truck.modelNo || "",
-                statusID: truck.statusID || "1",
+                truckNo: truck.name || "",
+                regoNo: truck.registration_no || "",
+                modelNo: truck.model || "",
+                statusID: truck.status || "active",
             });
         }
     }, [truck]);
@@ -56,7 +56,7 @@ const EditTruck = () => {
 
         try {
             const payload = {
-                id: Number(id),
+                id: String(id),
                 payload: form,
             };
 

@@ -74,8 +74,9 @@ const HeaderPage: React.FC<HeaderProps> = ({
     }
 
     const filtered = devices.filter((d: any) =>
-      d.deviceName?.toLowerCase().includes(value.toLowerCase()) ||
-      d.imei?.toLowerCase().includes(value.toLowerCase())
+      d.terminal_id?.toLowerCase().includes(value.toLowerCase()) ||
+      d.imei?.toLowerCase().includes(value.toLowerCase()) ||
+      d.model?.toLowerCase().includes(value.toLowerCase())
     );
 
     setFilteredDevices(filtered);
@@ -127,7 +128,7 @@ const HeaderPage: React.FC<HeaderProps> = ({
                   navigate(`/devicemaster`); // ✅ go to page
                 }}
               >
-                {d.deviceName} - {d.deviceNo}
+                {d.terminal_id}{d.model ? ` — ${d.model}` : ""}
               </li>
             ))}
           </ul>

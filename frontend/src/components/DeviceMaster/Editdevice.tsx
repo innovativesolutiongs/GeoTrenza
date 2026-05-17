@@ -18,9 +18,9 @@ const EditDevice: React.FC = () => {
     const device = location.state?.device;
 
     const [form, setForm] = useState<DevicePayload>({
-        deviceNo: device?.deviceNo || "",
-        deviceName: device?.deviceName || "",
-        statusID: device?.statusID || 1,
+        deviceNo: device?.terminal_id || "",
+        deviceName: device?.model || "",
+        statusID: "1",
     });
 
     if (!device) {
@@ -41,7 +41,7 @@ const EditDevice: React.FC = () => {
     const handleSubmit = async () => {
         try {
             const payload = {
-                id: device.device_ID,
+                id: device.id,
                 data: form,
             };
 

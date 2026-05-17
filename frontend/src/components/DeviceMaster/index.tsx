@@ -37,14 +37,14 @@ const DeviceMaster: React.FC = () => {
   /* ================= MATCH ALLOCATED DEVICES ================= */
 
   const allocatedDeviceIDs = (allocations || []).map((a: any) =>
-    Number(a.deviceID)
+    String(a.deviceID)
   );
 
   const filteredDevices =
     userTY === "AD"
       ? devices
-      : devices.filter((device: any) =>
-        allocatedDeviceIDs.includes(Number(device.device_ID))
+      : devices.filter((device) =>
+        allocatedDeviceIDs.includes(String(device.id))
       );
 
   /* ================= PAGINATION ================= */
@@ -62,7 +62,7 @@ const DeviceMaster: React.FC = () => {
 
   /* ================= DELETE DEVICE ================= */
 
-  const handleDelete = (ID: number) => {
+  const handleDelete = (ID: string) => {
     const toastId = toast.info(
       <div>
         <div>Delete this device?</div>
@@ -133,9 +133,9 @@ const DeviceMaster: React.FC = () => {
               <thead>
                 <tr>
                   <th style={th}>Sr No</th>
-                  <th style={th}>Device No</th>
-                  <th style={th}>Device Name</th>
-                  <th style={thCenter}>Status</th>
+                  <th style={th}>Terminal ID</th>
+                  <th style={th}>Model</th>
+                  <th style={thCenter}>Last Seen</th>
                   {userTY === "AD" && <th style={thCenter}>Edit</th>}
                   {userTY === "AD" && <th style={thCenter}>Actions</th>}
                 </tr>
@@ -151,7 +151,7 @@ const DeviceMaster: React.FC = () => {
                 ) : (
                   paginatedDevices.map((device, index) => (
                     <tr
-                      key={device.device_ID}
+                      key={device.id}
                       style={{
                         backgroundColor:
                           index % 2 === 0 ? "#ffffff" : "#f8f9fa",
@@ -159,31 +159,21 @@ const DeviceMaster: React.FC = () => {
                     >
                       <td style={td}>{startIndex + index + 1}</td>
 
-                      <td style={td}>{device.deviceNo}</td>
+                      <td style={td}>{device.terminal_id}</td>
 
-                      <td style={td}>{device.deviceName}</td>
+                      <td style={td}>{device.model ?? "—"}</td>
 
                       <td style={tdCenter}>
-                        <span
-                          style={{
-                            color:
-                              Number(device.statusID) === 1
-                                ? "#28a745"
-                                : "#dc3545",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {Number(device.statusID) === 1
-                            ? "Active"
-                            : "Inactive"}
-                        </span>
+                        {device.last_seen_at
+                          ? new Date(device.last_seen_at).toLocaleString()
+                          : "—"}
                       </td>
 
                       {userTY === "AD" && (
                         <>
                           <td style={tdCenter}>
                             <Link
-                              to={`/edit-device/${device.device_ID}`}
+                              to={`/edit-device/${device.id}`}
                               state={{ device }}
                               style={{ textDecoration: "none" }}
                             >
@@ -194,7 +184,7 @@ const DeviceMaster: React.FC = () => {
                           <td style={tdCenter}>
                             <button
                               style={deleteBtn}
-                              onClick={() => handleDelete(device.device_ID)}
+                              onClick={() => handleDelete(device.id)}
                             >
                               🗑️
                             </button>

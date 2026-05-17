@@ -166,8 +166,8 @@ const AllocationMaster: React.FC = () => {
               >
                 <option value="">{trucksLoading ? "Loading..." : "Select Truck"}</option>
                 {trucks.map((t: any) => (
-                  <option key={t.ID} value={t.ID}>
-                    {t.truckNo}
+                  <option key={t.id} value={t.id}>
+                    {t.name ?? t.registration_no}
                   </option>
                 ))}
               </select>
@@ -187,8 +187,8 @@ const AllocationMaster: React.FC = () => {
               >
                 <option value="">{devicesLoading ? "Loading..." : "Select Device"}</option>
                 {devices.map((d: any) => (
-                  <option key={d.ID} value={d.device_ID}>
-                    {d.deviceNo}
+                  <option key={d.id} value={d.id}>
+                    {d.terminal_id}
                   </option>
                 ))}
               </select>

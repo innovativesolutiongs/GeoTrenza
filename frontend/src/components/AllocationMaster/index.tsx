@@ -98,14 +98,14 @@ const AllocationMaster: React.FC = () => {
 
   const getdeviceID = (id: number | string) => {
     const device = devices.find(
-      (d: any) => Number(d.device_ID) === Number(id)
+      (d: any) => String(d.id) === String(id)
     );
-    return device ? device.deviceNo : "Unknown";
+    return device ? device.terminal_id : "Unknown";
   };
 
   const gettruckID = (id: number | string) => {
-    const truck = trucks.find((t: any) => Number(t.ID) === Number(id));
-    return truck ? truck.truckNo : "Unknown";
+    const truck = trucks.find((t: any) => String(t.id) === String(id));
+    return truck ? (truck.name ?? truck.registration_no) : "Unknown";
   };
 
   const formatDate = (dateStr: string) => {

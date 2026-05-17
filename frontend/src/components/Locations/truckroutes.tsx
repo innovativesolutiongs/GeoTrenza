@@ -60,14 +60,11 @@ const AllocationForm = () => {
                 (item: any) =>
                     Number(item.customerID) === Number(selectedCustomer)
             )
-            .map((item: any) => Number(item.truckID));
-
-        // console.log("🚛 TruckIDs from Allocation:", allocationTruckIDs);
-        // console.log("🚚 Trucks Table:", trucks);
+            .map((item: any) => String(item.truckID));
 
         // Step 2 → filter trucks table using those IDs
         const matchedTrucks = trucks.filter((truck: any) =>
-            allocationTruckIDs.includes(Number(truck.ID)) // IMPORTANT MATCH
+            allocationTruckIDs.includes(String(truck.id)) // IMPORTANT MATCH
         );
 
         // console.log("✅ Final Trucks to Show:", matchedTrucks);
@@ -105,8 +102,8 @@ const AllocationForm = () => {
                         <option value="">Select Truck</option>
 
                         {filteredTrucks.map((truck: any) => (
-                            <option key={truck.ID} value={truck.ID}>
-                                {truck.truckNo}
+                            <option key={truck.id} value={truck.id}>
+                                {truck.name ?? truck.registration_no}
                             </option>
                         ))}
                     </select>

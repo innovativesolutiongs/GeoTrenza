@@ -1,5 +1,7 @@
 import { getRequest, postRequest, putRequest, deleteRequest } from "../api";
 
+// Form payload shape — write endpoints are removed in Stage 3 backend, so these
+// calls reject at runtime. Mutation UI is hidden via ENABLE_MUTATIONS.
 export interface DevicePayload {
   deviceNo: string;
   deviceName: string;
@@ -7,23 +9,19 @@ export interface DevicePayload {
   userID?: number;
 }
 
-// ====== GET ALL ======
 const getAllDevices = () => {
   return getRequest("/devices");
 };
 
-// ====== CREATE ======
 const createDevice = (data: DevicePayload) => {
   return postRequest("/devices", data);
 };
 
-// ====== UPDATE ======
-const updateDevice = (id: number, data: Partial<DevicePayload>) => {
+const updateDevice = (id: string, data: Partial<DevicePayload>) => {
   return putRequest(`/devices/${id}`, data);
 };
 
-// ====== DELETE ======
-const deleteDevice = (id: number) => {
+const deleteDevice = (id: string) => {
   return deleteRequest(`/devices/${id}`);
 };
 
