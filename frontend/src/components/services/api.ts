@@ -1,8 +1,12 @@
 // src/components/services/api.ts
 import axios from "axios";
 
+// VITE_API_URL is set per-environment in .env.local (gitignored) or via the
+// build environment. Falls back to local dev backend for the common case.
+const baseURL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+
 const API = axios.create({
-  baseURL: "http://localhost:4000/api", // adjust if needed
+  baseURL,
   headers: {
     "Content-Type": "application/json",
   },
