@@ -34,7 +34,10 @@ beforeEach(() => {
   for (const k of Object.keys(repoMocks)) delete repoMocks[k];
 });
 
-const makeQB = (rows: unknown[]) => {
+// Build a chainable query-builder stub. Position controllers now use
+// leftJoin + addSelect + getRawAndEntities to pull device_type alongside
+// each row; events still use getMany.
+const makeQB = (rows: unknown[], opts: { joinDeviceType?: string } = {}) => {
   const qb: any = {};
   qb.distinctOn = jest.fn().mockReturnValue(qb);
   qb.where = jest.fn().mockReturnValue(qb);
@@ -42,7 +45,13 @@ const makeQB = (rows: unknown[]) => {
   qb.orderBy = jest.fn().mockReturnValue(qb);
   qb.addOrderBy = jest.fn().mockReturnValue(qb);
   qb.limit = jest.fn().mockReturnValue(qb);
+  qb.leftJoin = jest.fn().mockReturnValue(qb);
+  qb.addSelect = jest.fn().mockReturnValue(qb);
   qb.getMany = jest.fn().mockResolvedValue(rows);
+  qb.getRawAndEntities = jest.fn().mockResolvedValue({
+    entities: rows,
+    raw: rows.map(() => ({ p_device_type: opts.joinDeviceType ?? "WIRED" })),
+  });
   return qb;
 };
 
@@ -127,14 +136,16 @@ describe("GET /api/positions/latest", () => {
     const rows = [
       { id: "10", device_id: "1", lat: 24.86, lng: 67.0, recorded_at: "2026-05-15T17:55:46.000Z" },
     ];
-    const qb = makeQB(rows);
+    const qb = makeQB(rows, { joinDeviceType: "MAGNETIC_BATTERY" });
     repoMocks["Position"] = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
 
     const res = await request(buildApp()).get("/api/positions/latest");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(rows);
+    expect(res.body).toEqual(rows.map((r) => ({ ...r, device_type: "MAGNETIC_BATTERY" })));
     expect(qb.distinctOn).toHaveBeenCalledWith(["p.device_id"]);
     expect(qb.limit).toHaveBeenCalledWith(100);
+    expect(qb.leftJoin).toHaveBeenCalledWith("devices", "d", "d.id = p.device_id");
+    expect(qb.addSelect).toHaveBeenCalledWith("d.device_type", "p_device_type");
   });
 
   test("respects limit query param", async () => {
@@ -162,7 +173,7 @@ describe("GET /api/positions/latest", () => {
 describe("GET /api/positions", () => {
   test("happy path filters by device + time range", async () => {
     const rows = [{ id: "1", device_id: "42", lat: 24.86, lng: 67.0, recorded_at: "2026-05-15T17:55:46.000Z" }];
-    const qb = makeQB(rows);
+    const qb = makeQB(rows, { joinDeviceType: "WIRED" });
     repoMocks["Position"] = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
 
     const res = await request(buildApp())
@@ -170,7 +181,7 @@ describe("GET /api/positions", () => {
       .query({ device_id: "42", from: "2026-05-15T00:00:00Z", to: "2026-05-16T00:00:00Z" });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(rows);
+    expect(res.body).toEqual(rows.map((r) => ({ ...r, device_type: "WIRED" })));
     expect(qb.where).toHaveBeenCalledWith("p.device_id = :deviceId", { deviceId: "42" });
   });
 

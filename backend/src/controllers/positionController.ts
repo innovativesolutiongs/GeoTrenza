@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { SelectQueryBuilder } from "typeorm";
 import { AppDataSource } from "../ormconfig";
 import { Position } from "../entity/position";
 
@@ -21,22 +22,34 @@ const parseIsoDate = (raw: unknown, label: string): Date | { error: string } => 
   return d;
 };
 
+// Run a positions query that also pulls device_type from the joined devices
+// row. Returns each position as a flat object with `device_type` appended.
+// device_type is NOT NULL in the schema (default 'WIRED'), but we coerce a
+// NULL from a missing FK row to 'WIRED' as a defensive fallback.
+const fetchWithDeviceType = async (qb: SelectQueryBuilder<Position>) => {
+  qb.leftJoin("devices", "d", "d.id = p.device_id").addSelect("d.device_type", "p_device_type");
+  const { entities, raw } = await qb.getRawAndEntities();
+  return entities.map((e, i) => ({
+    ...e,
+    device_type: raw[i].p_device_type ?? "WIRED",
+  }));
+};
+
 // GET /api/positions/latest?limit=N
-// Most recent position per device. DISTINCT ON (device_id) ORDER BY device_id, recorded_at DESC.
+// Most recent position per device, with device_type joined in.
 export const getLatestPositions = async (req: Request, res: Response) => {
   try {
     const limitParsed = parseLimit(req.query.limit, 100, 1000);
     if (typeof limitParsed !== "number") return res.status(400).json({ message: limitParsed.error });
 
-    const rows = await positionRepo()
+    const qb = positionRepo()
       .createQueryBuilder("p")
       .distinctOn(["p.device_id"])
       .orderBy("p.device_id", "ASC")
       .addOrderBy("p.recorded_at", "DESC")
-      .limit(limitParsed)
-      .getMany();
+      .limit(limitParsed);
 
-    res.json(rows);
+    res.json(await fetchWithDeviceType(qb));
   } catch (error: any) {
     res.status(500).json({ message: "Failed to fetch latest positions", error: error?.message });
   }
@@ -58,15 +71,14 @@ export const getPositionsForDevice = async (req: Request, res: Response) => {
     const toDate = parseIsoDate(to, "to");
     if (toDate instanceof Date === false) return res.status(400).json({ message: (toDate as { error: string }).error });
 
-    const rows = await positionRepo()
+    const qb = positionRepo()
       .createQueryBuilder("p")
       .where("p.device_id = :deviceId", { deviceId: deviceIdStr })
       .andWhere("p.recorded_at >= :from", { from: (fromDate as Date).toISOString() })
       .andWhere("p.recorded_at <= :to", { to: (toDate as Date).toISOString() })
-      .orderBy("p.recorded_at", "ASC")
-      .getMany();
+      .orderBy("p.recorded_at", "ASC");
 
-    res.json(rows);
+    res.json(await fetchWithDeviceType(qb));
   } catch (error: any) {
     res.status(500).json({ message: "Failed to fetch positions", error: error?.message });
   }
