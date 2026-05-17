@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Users, Settings } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchDevices } from "../store/deviceSlice";
@@ -6,6 +6,10 @@ import { fetchTrucks } from "../store/truckSlice";
 import { fetchCustomers } from "../store/customerSlice";
 import { fetchCustomerAllocations } from "../store/allocationslice";
 import GoogleMapCluster from "./GoogleMapCluster";
+import type { MarkerType } from "./GoogleMapCluster";
+import { useLivePositions } from "../hooks/useLivePositions";
+import { interpolatePosition } from "../utils/deadReckoning";
+import { shouldFreezeMarker } from "../utils/signalBlending";
 
 const Dashboard: React.FC = () => {
   const dispatch = useDispatch();
@@ -14,24 +18,14 @@ const Dashboard: React.FC = () => {
   const trucks = useSelector((state: any) => state.truck.trucks);
   const { items = [] } = useSelector((state: any) => state.customers);
 
-  // console.log('devices', devices);
-  // console.log('trucks', items);
-
   const allocations = useSelector(
     (state: any) => state.allocation?.allocations || []
   );
-
-  console.log(allocations);
-
-
 
   const user = useSelector((state: any) => state.login.userInfo);
   const userTY = user?.userTY;
   const customerID = user?.customerID;
   const compID = user.compID;
-
-
-
 
   /* ================= FETCH ================= */
 
@@ -46,71 +40,88 @@ const Dashboard: React.FC = () => {
     if (compID) {
       dispatch(fetchCustomers(compID) as any);
     }
-  }, [dispatch, customerID]);
+  }, [dispatch, customerID, compID]);
 
-  /* ================= FILTER DEVICES ================= */
+  /* ================= LIVE POSITIONS ================= */
+
+  const { positions } = useLivePositions();
+
+  /* ================= FILTERED COUNTS ================= */
 
   const totalCustomers = items.length;
   const totalDevices = devices.length;
   const totalTrucks = trucks.length;
 
-  // Example logic for active customers (customize based on your DB)
   const activeCustomers = items.filter(
     (c: any) => c.status === "active" || c.isActive === 1
   ).length;
 
-  const allocatedDeviceIDs = allocations.map((a: any) =>
-    String(a.deviceID)
-  );
+  const allocatedDeviceIDs = allocations.map((a: any) => String(a.deviceID));
 
   const filteredDevices =
     userTY === "AD"
       ? devices
       : devices.filter((device: any) =>
-        allocatedDeviceIDs.includes(String(device.id))
-      );
+          allocatedDeviceIDs.includes(String(device.id))
+        );
 
-  /* ================= FILTER TRUCKS ================= */
-
-  const allocatedTruckIDs = allocations.map((a: any) =>
-    String(a.truckID)
-  );
+  const allocatedTruckIDs = allocations.map((a: any) => String(a.truckID));
 
   const filteredTrucks =
     userTY === "AD"
       ? trucks
       : trucks.filter((truck: any) =>
-        allocatedTruckIDs.includes(String(truck.id))
-      );
+          allocatedTruckIDs.includes(String(truck.id))
+        );
 
-  /* ================= MAP MARKERS ================= */
+  /* ================= MAP MARKERS — LIVE ================= */
 
-  // const markersData = filteredTrucks.map((truck: any) => ({
-  //   id: truck.ID,
+  // Build a lookup so we can label markers with terminal_id / model. The
+  // marker animation loop is added in a follow-up commit; for now we
+  // interpolate once per render based on Date.now().
+  const deviceById = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const d of devices) map.set(String(d.id), d);
+    return map;
+  }, [devices]);
 
-  //   // Ludhiana example: 30.9010, 75.8573
-  //   // Moga example: 30.8230, 75.1730
+  const visiblePositions = useMemo(() => {
+    if (userTY === "AD") return positions;
+    return positions.filter((p) => allocatedDeviceIDs.includes(String(p.device_id)));
+  }, [positions, userTY, allocatedDeviceIDs]);
 
-  //   lat: Number(truck.lat) || 30.9010,
-  //   lng: Number(truck.lng) || 75.8573,
-
-  //   date: truck.gpsDateTime || null,
-  //   speed: Number(truck.speed) || 0,
-  // }));
-
-  const markersData = [
-  { id: 1, lat: 30.9010, lng: 75.8573, speed: 45 }, // Ludhiana
-  { id: 2, lat: 30.8230, lng: 75.1730, speed: 60 }, // Moga
-];
+  const markers: MarkerType[] = useMemo(() => {
+    const now = Date.now();
+    return visiblePositions.map((p) => {
+      const freeze = shouldFreezeMarker(p);
+      const interp = freeze
+        ? {
+            lat: p.lat,
+            lng: p.lng,
+            ageSeconds: Math.max(0, (now - new Date(p.recorded_at).getTime()) / 1000),
+            isStale: false,
+            isFrozen: true,
+          }
+        : interpolatePosition(p, now);
+      const dev = deviceById.get(String(p.device_id));
+      return {
+        id: p.id,
+        lat: interp.lat,
+        lng: interp.lng,
+        date: p.recorded_at,
+        speed: p.speed_kph ?? 0,
+        label: dev ? `${dev.terminal_id}${dev.model ? ` (${dev.model})` : ""}` : `device ${p.device_id}`,
+        isStale: interp.isStale,
+        isFrozen: interp.isFrozen,
+      };
+    });
+  }, [visiblePositions, deviceById]);
 
   return (
     <div className="dashboard">
       {/* ================= STATS ================= */}
 
       <div className="row g-4 mb-4">
-
-        {/* ADMIN ONLY CARDS */}
-
         {userTY === "AD" && (
           <>
             <div className="col-md-3">
@@ -163,7 +174,6 @@ const Dashboard: React.FC = () => {
           </>
         )}
 
-        {/* BOTH ADMIN & CUSTOMER */}
         {userTY === "CUSTOMER" && (
           <>
             <div className="col-md-3">
@@ -191,18 +201,20 @@ const Dashboard: React.FC = () => {
             </div>
           </>
         )}
-
       </div>
 
       {/* ================= MAP ================= */}
 
       <div className="card">
-        <div className="card-header">
+        <div className="card-header d-flex justify-content-between align-items-center">
           <h5 className="mb-0">Live Devices / Trucks Routes</h5>
+          <small className="text-muted">
+            {markers.length} {markers.length === 1 ? "vehicle" : "vehicles"} live
+          </small>
         </div>
 
         <div className="card-body">
-          <GoogleMapCluster markers={markersData} />
+          <GoogleMapCluster markers={markers} />
         </div>
       </div>
     </div>
