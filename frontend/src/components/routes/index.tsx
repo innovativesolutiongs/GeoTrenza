@@ -14,6 +14,9 @@ import CustomerNew from "../customers/CustomerNew";
 import CustomerDetail from "../customers/CustomerDetail";
 import GatewayList from "../gateways/GatewayList";
 import GatewayNew from "../gateways/GatewayNew";
+import AlertsList from "../alerts/AlertsList";
+import AlertRulesList from "../alerts/AlertRulesList";
+import AlertSubscriptions from "../alerts/AlertSubscriptions";
 
 // Stage 3e: old master pages superseded; the legacy paths redirect.
 const router = createBrowserRouter([
@@ -35,6 +38,11 @@ const router = createBrowserRouter([
           { path: 'customers/:id', element: <CustomerDetail /> },
           { path: 'gateways', element: <GatewayList /> },
           { path: 'gateways/new', element: <GatewayNew /> },
+
+          // Stage 3d Phase 1 alert framework
+          { path: 'alerts', element: <AlertsList /> },
+          { path: 'alert-rules', element: <AlertRulesList /> },
+          { path: 'alert-subscriptions', element: <AlertSubscriptions /> },
 
           // Vehicle detail (keep both /trucks/:id and /vehicles/:id for now)
           { path: 'trucks/:id', element: <TruckDetail /> },
