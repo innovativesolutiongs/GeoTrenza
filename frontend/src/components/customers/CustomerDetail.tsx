@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import customerService from "../services/customerService";
 import gatewayService from "../services/gatewayService";
+import GatewayFormModal from "../gateways/GatewayFormModal";
 import ConfirmDestructiveModal from "../shared/ConfirmDestructiveModal";
 
 type Tab = "overview" | "vehicles" | "gateways" | "drivers" | "users" | "billing";
@@ -21,8 +22,11 @@ const CustomerDetail: React.FC = () => {
 
   // Modal flags
   const [addVehicleOpen, setAddVehicleOpen] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<any | null>(null);
   const [assignGwOpen, setAssignGwOpen] = useState(false);
+  const [editingGw, setEditingGw] = useState<any | null>(null);
   const [addDriverOpen, setAddDriverOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<any | null>(null);
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [unassignGw, setUnassignGw] = useState<any | null>(null);
 
@@ -90,10 +94,11 @@ const CustomerDetail: React.FC = () => {
           addLabel="+ Add Vehicle"
           onAdd={() => setAddVehicleOpen(true)}
         >
-          <Table cols={["Name", "Registration", "Type", "Year", "Status"]}
+          <Table cols={["Name", "Registration", "Type", "Year", "Status", ""]}
                  rows={vehicles.map((v) => [
                    <Link to={`/vehicles/${v.id}`} style={{ color: "#1d4ed8" }}>{v.name ?? v.registration_no}</Link>,
                    v.registration_no, v.vehicle_type, v.year ?? "—", v.status,
+                   <button onClick={() => setEditingVehicle(v)} style={btnLinkSmall}>Edit</button>,
                  ])} empty="No vehicles yet" />
         </Section>
       )}
@@ -109,17 +114,21 @@ const CustomerDetail: React.FC = () => {
                    g.terminal_id, g.model ?? "—", g.device_type,
                    g.vehicle_id ? `Vehicle ${g.vehicle_id}` : <em style={{ color: "#9ca3af" }}>unassigned</em>,
                    g.inventory_status,
-                   <button onClick={() => setUnassignGw(g)} style={btnDangerSmall}>Unassign</button>,
+                   <span style={{ display: "inline-flex", gap: 6 }}>
+                     <button onClick={() => setEditingGw(g)} style={btnLinkSmall}>Edit</button>
+                     <button onClick={() => setUnassignGw(g)} style={btnDangerSmall}>Unassign</button>
+                   </span>,
                  ])} empty="No gateways assigned to this customer" />
         </Section>
       )}
 
       {tab === "drivers" && (
         <Section title="Drivers" addLabel="+ Add Driver" onAdd={() => setAddDriverOpen(true)}>
-          <Table cols={["Name", "Phone", "License", "Vehicle", "Status"]}
+          <Table cols={["Name", "Phone", "License", "Vehicle", "Status", ""]}
                  rows={drivers.map((d) => [
                    d.name, d.phone ?? "—", d.license_number ?? "—",
                    d.vehicle_id ? `Vehicle ${d.vehicle_id}` : "—", d.status,
+                   <button onClick={() => setEditingDriver(d)} style={btnLinkSmall}>Edit</button>,
                  ])} empty="No drivers yet" />
         </Section>
       )}
@@ -147,11 +156,20 @@ const CustomerDetail: React.FC = () => {
       {addVehicleOpen && (
         <VehicleFormModal customerId={id} onClose={() => setAddVehicleOpen(false)} onSaved={() => { setAddVehicleOpen(false); reload(); }} />
       )}
+      {editingVehicle && (
+        <VehicleFormModal customerId={id} editing={editingVehicle} onClose={() => setEditingVehicle(null)} onSaved={() => { setEditingVehicle(null); reload(); }} />
+      )}
       {assignGwOpen && (
         <AssignGatewayModal customerId={id} onClose={() => setAssignGwOpen(false)} onAssigned={() => { setAssignGwOpen(false); reload(); }} />
       )}
+      {editingGw && (
+        <GatewayFormModal editing={editingGw} onClose={() => setEditingGw(null)} onSaved={() => { setEditingGw(null); reload(); }} />
+      )}
       {addDriverOpen && (
         <DriverFormModal customerId={id} vehicles={vehicles} onClose={() => setAddDriverOpen(false)} onSaved={() => { setAddDriverOpen(false); reload(); }} />
+      )}
+      {editingDriver && (
+        <DriverFormModal customerId={id} vehicles={vehicles} editing={editingDriver} onClose={() => setEditingDriver(null)} onSaved={() => { setEditingDriver(null); reload(); }} />
       )}
       {addUserOpen && (
         <UserFormModal customerId={id} onClose={() => setAddUserOpen(false)} onSaved={() => { setAddUserOpen(false); reload(); }} />
@@ -219,18 +237,31 @@ const ModalShell: React.FC<{ title: string; onClose: () => void; children: React
   </div>
 );
 
-const VehicleFormModal: React.FC<{ customerId: string; onClose: () => void; onSaved: () => void }> = ({ customerId, onClose, onSaved }) => {
+const VehicleFormModal: React.FC<{ customerId: string; editing?: any; onClose: () => void; onSaved: () => void }> = ({ customerId, editing, onClose, onSaved }) => {
+  const m = editing?.metadata ?? {};
   const [form, setForm] = useState({
-    registration_no: "", name: "", vehicle_type: "Truck",
-    year: "", make: "", model: "", manufacturer: "", vin: "",
-    // type-specific metadata flat in form, packaged into JSONB on submit
-    gvw_kg: "", axle_count: "", body_type: "",
-    trailer_length_m: "", trailer_type: "",
-    fuel_type: "", seats: "",
-    power_kw: "",
-    container_size: "", refrigerated: "false",
-    equipment_type: "", capacity: "",
-    description: "",
+    registration_no: editing?.registration_no ?? "",
+    name: editing?.name ?? "",
+    vehicle_type: editing?.vehicle_type ?? "Truck",
+    year: editing?.year != null ? String(editing.year) : "",
+    make: editing?.make ?? "",
+    model: editing?.model ?? "",
+    manufacturer: editing?.manufacturer ?? "",
+    vin: editing?.vin ?? "",
+    // type-specific metadata flattened from JSONB into form fields
+    gvw_kg: m.gvw_kg != null ? String(m.gvw_kg) : "",
+    axle_count: m.axle_count != null ? String(m.axle_count) : "",
+    body_type: m.body_type ?? "",
+    trailer_length_m: m.trailer_length_m != null ? String(m.trailer_length_m) : "",
+    trailer_type: m.trailer_type ?? "",
+    fuel_type: m.fuel_type ?? "",
+    seats: m.seats != null ? String(m.seats) : "",
+    power_kw: m.power_kw != null ? String(m.power_kw) : "",
+    container_size: m.container_size ?? "",
+    refrigerated: m.refrigerated ? "true" : "false",
+    equipment_type: m.equipment_type ?? "",
+    capacity: m.capacity ?? "",
+    description: m.description ?? "",
   });
   const [busy, setBusy] = useState(false);
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -266,7 +297,7 @@ const VehicleFormModal: React.FC<{ customerId: string; onClose: () => void; onSa
 
     setBusy(true);
     try {
-      await customerService.createVehicleForCustomer(customerId, {
+      const payload = {
         registration_no: form.registration_no,
         name: form.name,
         vehicle_type: form.vehicle_type,
@@ -276,9 +307,15 @@ const VehicleFormModal: React.FC<{ customerId: string; onClose: () => void; onSa
         manufacturer: form.manufacturer || null,
         vin: form.vin || null,
         metadata: Object.keys(meta).length ? meta : null,
-        status: "active",
-      });
-      toast.success("Vehicle added");
+        status: editing?.status ?? "active",
+      };
+      if (editing) {
+        await customerService.updateVehicle(String(editing.id), payload);
+        toast.success("Vehicle updated");
+      } else {
+        await customerService.createVehicleForCustomer(customerId, payload);
+        toast.success("Vehicle added");
+      }
       onSaved();
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Failed");
@@ -290,7 +327,7 @@ const VehicleFormModal: React.FC<{ customerId: string; onClose: () => void; onSa
   );
 
   return (
-    <ModalShell title="Add Vehicle" onClose={onClose}>
+    <ModalShell title={editing ? "Edit Vehicle" : "Add Vehicle"} onClose={onClose}>
       <div style={grid2}>
         <div>
           <label style={lab}>Vehicle type</label>
@@ -363,7 +400,7 @@ const VehicleFormModal: React.FC<{ customerId: string; onClose: () => void; onSa
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
         <button onClick={onClose} style={btnSecondary} disabled={busy}>Cancel</button>
-        <button onClick={submit} disabled={busy} style={btnPrimary}>{busy ? "Saving…" : "Save vehicle"}</button>
+        <button onClick={submit} disabled={busy} style={btnPrimary}>{busy ? "Saving…" : (editing ? "Save changes" : "Save vehicle")}</button>
       </div>
     </ModalShell>
   );
@@ -406,29 +443,53 @@ const AssignGatewayModal: React.FC<{ customerId: string; onClose: () => void; on
   );
 };
 
-const DriverFormModal: React.FC<{ customerId: string; vehicles: any[]; onClose: () => void; onSaved: () => void }> = ({ customerId, vehicles, onClose, onSaved }) => {
-  const [form, setForm] = useState({ name: "", phone: "", email: "", license_number: "", license_expiry: "", hire_date: "", vehicle_id: "" });
+const DriverFormModal: React.FC<{ customerId: string; vehicles: any[]; editing?: any; onClose: () => void; onSaved: () => void }> = ({ customerId, vehicles, editing, onClose, onSaved }) => {
+  const [form, setForm] = useState({
+    name: editing?.name ?? "",
+    phone: editing?.phone ?? "",
+    email: editing?.email ?? "",
+    license_number: editing?.license_number ?? "",
+    license_expiry: editing?.license_expiry ?? "",
+    hire_date: editing?.hire_date ?? "",
+    vehicle_id: editing?.vehicle_id != null ? String(editing.vehicle_id) : "",
+    status: editing?.status ?? "ACTIVE",
+  });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const submit = async () => {
     if (!form.name) { toast.error("Name is required"); return; }
     setBusy(true);
     try {
-      await customerService.createDriverForCustomer(customerId, {
-        name: form.name, phone: form.phone || null, email: form.email || null,
+      const payload = {
+        name: form.name,
+        phone: form.phone || null,
+        email: form.email || null,
         license_number: form.license_number || null,
         license_expiry: form.license_expiry || null,
         hire_date: form.hire_date || null,
         vehicle_id: form.vehicle_id || null,
-      });
-      toast.success("Driver added");
+        status: form.status,
+      };
+      if (editing) {
+        const { driverService } = await import("../services/driverService").then((m) => ({ driverService: m.default }));
+        await driverService.updateDriver(String(editing.id), payload);
+        if (form.vehicle_id && form.vehicle_id !== String(editing.vehicle_id ?? "")) {
+          await driverService.assignDriverToVehicle(String(editing.id), form.vehicle_id);
+        } else if (!form.vehicle_id && editing.vehicle_id) {
+          await driverService.unassignDriverFromVehicle(String(editing.id));
+        }
+        toast.success("Driver updated");
+      } else {
+        await customerService.createDriverForCustomer(customerId, payload);
+        toast.success("Driver added");
+      }
       onSaved();
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Failed");
     } finally { setBusy(false); }
   };
   return (
-    <ModalShell title="Add Driver" onClose={onClose}>
+    <ModalShell title={editing ? "Edit Driver" : "Add Driver"} onClose={onClose}>
       <div style={grid2}>
         <div><label style={lab}>Name *</label><input value={form.name} onChange={(e) => set("name", e.target.value)} style={inp} /></div>
         <div><label style={lab}>Phone</label><input value={form.phone} onChange={(e) => set("phone", e.target.value)} style={inp} /></div>
@@ -436,21 +497,30 @@ const DriverFormModal: React.FC<{ customerId: string; vehicles: any[]; onClose: 
         <div><label style={lab}>License #</label><input value={form.license_number} onChange={(e) => set("license_number", e.target.value)} style={inp} /></div>
         <div><label style={lab}>License expiry</label><input type="date" value={form.license_expiry} onChange={(e) => set("license_expiry", e.target.value)} style={inp} /></div>
         <div><label style={lab}>Hire date</label><input type="date" value={form.hire_date} onChange={(e) => set("hire_date", e.target.value)} style={inp} /></div>
-        <div style={{ gridColumn: "1 / -1" }}>
-          <label style={lab}>Initial vehicle assignment</label>
+        <div>
+          <label style={lab}>Vehicle assignment</label>
           <select value={form.vehicle_id} onChange={(e) => set("vehicle_id", e.target.value)} style={inp}>
             <option value="">— none —</option>
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name ?? v.registration_no} · {v.registration_no}</option>)}
           </select>
         </div>
+        <div>
+          <label style={lab}>Status</label>
+          <select value={form.status} onChange={(e) => set("status", e.target.value)} style={inp}>
+            <option>ACTIVE</option><option>INACTIVE</option>
+          </select>
+        </div>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
         <button onClick={onClose} style={btnSecondary} disabled={busy}>Cancel</button>
-        <button onClick={submit} disabled={busy} style={btnPrimary}>{busy ? "Saving…" : "Add driver"}</button>
+        <button onClick={submit} disabled={busy} style={btnPrimary}>{busy ? "Saving…" : (editing ? "Save changes" : "Add driver")}</button>
       </div>
     </ModalShell>
   );
 };
+
+// GatewayFormModal lives in ../gateways/GatewayFormModal.tsx — shared with
+// /gateways list page.
 
 const UserFormModal: React.FC<{ customerId: string; onClose: () => void; onSaved: () => void }> = ({ customerId, onClose, onSaved }) => {
   const [form, setForm] = useState({ name: "", email: "" });
@@ -501,6 +571,7 @@ const td: React.CSSProperties = { padding: "12px 14px", color: "#111827" };
 const btnPrimary: React.CSSProperties = { background: "#111827", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6, cursor: "pointer", fontWeight: 600, fontSize: 13 };
 const btnSecondary: React.CSSProperties = { background: "#f3f4f6", color: "#111827", border: "1px solid #d1d5db", padding: "8px 14px", borderRadius: 6, cursor: "pointer", fontSize: 13 };
 const btnDangerSmall: React.CSSProperties = { background: "transparent", color: "#dc2626", border: "1px solid #fecaca", padding: "4px 8px", borderRadius: 5, cursor: "pointer", fontSize: 11 };
+const btnLinkSmall: React.CSSProperties = { background: "transparent", color: "#1d4ed8", border: "1px solid #bfdbfe", padding: "4px 8px", borderRadius: 5, cursor: "pointer", fontSize: 11 };
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(17,24,39,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 5000 };
 const modalCard: React.CSSProperties = { background: "#fff", padding: 22, borderRadius: 10, width: "min(640px, 92vw)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 50px rgba(0,0,0,0.25)" };
 const grid2: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };

@@ -24,6 +24,7 @@ const deleteCustomer = (id: string) => deleteRequest(`/customers/${id}`);
 
 const listVehiclesForCustomer = (id: string) => getRequest(`/customers/${id}/vehicles`);
 const createVehicleForCustomer = (id: string, data: any) => postRequest(`/customers/${id}/vehicles`, data);
+const updateVehicle = (id: string, data: any) => putRequest(`/vehicles/${id}`, data);
 
 const listDriversForCustomer = (id: string) => getRequest(`/customers/${id}/drivers`);
 const createDriverForCustomer = (id: string, data: any) => postRequest(`/customers/${id}/drivers`, data);
@@ -34,7 +35,7 @@ const createUser = (data: { account_id: string; name: string; email: string; rol
 
 export default {
   listCustomers, getCustomer, createCustomer, updateCustomer, deleteCustomer,
-  listVehiclesForCustomer, createVehicleForCustomer,
+  listVehiclesForCustomer, createVehicleForCustomer, updateVehicle,
   listDriversForCustomer, createDriverForCustomer,
   listUsers, createUser,
 };

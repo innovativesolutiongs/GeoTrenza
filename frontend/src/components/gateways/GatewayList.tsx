@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import gatewayService from "../services/gatewayService";
 import ConfirmDestructiveModal from "../shared/ConfirmDestructiveModal";
+import GatewayFormModal from "./GatewayFormModal";
 
 const STATUSES = ["all","IN_STOCK","ASSIGNED","ACTIVE","INACTIVE","RETURNED","DECOMMISSIONED"];
 
@@ -11,6 +12,7 @@ const GatewayList: React.FC = () => {
   const [rows, setRows] = useState<any[]>([]);
   const [status, setStatus] = useState("all");
   const [toDelete, setToDelete] = useState<any | null>(null);
+  const [editing, setEditing] = useState<any | null>(null);
 
   const load = () => gatewayService.listGateways().then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -56,6 +58,7 @@ const GatewayList: React.FC = () => {
                 <td style={td}>{g.vehicle_id ?? "—"}</td>
                 <td style={td}>{g.last_seen_at ? new Date(g.last_seen_at).toLocaleString() : "—"}</td>
                 <td style={{ ...td, textAlign: "right" }}>
+                  <button onClick={() => setEditing(g)} style={btnLinkSmall}>Edit</button>{" "}
                   <button onClick={() => setToDelete(g)} style={btnDangerSmall}>Delete</button>
                 </td>
               </tr>
@@ -63,6 +66,14 @@ const GatewayList: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {editing && (
+        <GatewayFormModal
+          editing={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
 
       <ConfirmDestructiveModal
         open={!!toDelete}
@@ -87,5 +98,6 @@ const th: React.CSSProperties = { textAlign: "left", padding: "10px 14px", fontW
 const td: React.CSSProperties = { padding: "12px 14px", color: "#111827" };
 const btnPrimary: React.CSSProperties = { background: "#111827", color: "#fff", border: "none", padding: "9px 16px", borderRadius: 8, cursor: "pointer", fontWeight: 600 };
 const btnDangerSmall: React.CSSProperties = { background: "transparent", color: "#dc2626", border: "1px solid #fecaca", padding: "4px 8px", borderRadius: 5, cursor: "pointer", fontSize: 11 };
+const btnLinkSmall: React.CSSProperties = { background: "transparent", color: "#1d4ed8", border: "1px solid #bfdbfe", padding: "4px 8px", borderRadius: 5, cursor: "pointer", fontSize: 11 };
 
 export default GatewayList;
