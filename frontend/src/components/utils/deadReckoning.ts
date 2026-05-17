@@ -4,32 +4,20 @@ export interface InterpolatedPosition {
   lat: number;
   lng: number;
   ageSeconds: number;
-  isStale: boolean;   // ageSeconds > STALE_THRESHOLD_SEC — visual warning
-  isFrozen: boolean;  // ageSeconds > FREEZE_THRESHOLD_SEC — stop extrapolating
 }
 
-// Tuning knobs. STALE is when we lose visual trust; FREEZE is when we stop
-// extrapolating entirely (dead reckoning past two minutes diverges too far).
-const STALE_THRESHOLD_SEC = 60;
-const FREEZE_THRESHOLD_SEC = 120;
 const EARTH_RADIUS_KM = 6371;
 
 // Forward-project a position by speed × elapsed time along its last heading.
-// Pure function; no React, no time source other than the `now` arg so tests
-// can pin the clock.
+// Pure function; tests pin `now` to assert exact projections. Callers gate
+// invocation on classifier state — this function does NOT decide whether to
+// extrapolate, it just does the math when asked.
 export function interpolatePosition(position: Position, now: number): InterpolatedPosition {
   const recordedMs = new Date(position.recorded_at).getTime();
   const ageSeconds = Math.max(0, (now - recordedMs) / 1000);
-  const isStale = ageSeconds > STALE_THRESHOLD_SEC;
-  const isFrozen = ageSeconds > FREEZE_THRESHOLD_SEC;
 
-  // No speed → no projection. Same for null heading/speed.
-  if (
-    position.speed_kph === null ||
-    position.speed_kph === 0 ||
-    isFrozen
-  ) {
-    return { lat: position.lat, lng: position.lng, ageSeconds, isStale, isFrozen };
+  if (position.speed_kph === null || position.speed_kph === 0) {
+    return { lat: position.lat, lng: position.lng, ageSeconds };
   }
 
   const distanceKm = position.speed_kph * (ageSeconds / 3600);
@@ -54,7 +42,5 @@ export function interpolatePosition(position: Position, now: number): Interpolat
     lat: (newLatRad * 180) / Math.PI,
     lng: (newLngRad * 180) / Math.PI,
     ageSeconds,
-    isStale,
-    isFrozen,
   };
 }

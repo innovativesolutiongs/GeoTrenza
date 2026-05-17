@@ -3,6 +3,7 @@ import type { PayloadAction } from "@reduxjs/toolkit";
 import positionService from "../services/positionService";
 
 // bigint columns (id, device_id) come over the wire as strings; never parseInt them.
+// device_type is joined in by the API (defaults to "WIRED" if missing).
 export interface Position {
   id: string;
   device_id: string;
@@ -18,6 +19,7 @@ export interface Position {
   battery_voltage: number | null;
   mileage_m: number | null;
   telemetry: Record<string, unknown>;
+  device_type: "WIRED" | "MAGNETIC_BATTERY" | "ASSET_TRACKER";
 }
 
 interface PositionState {

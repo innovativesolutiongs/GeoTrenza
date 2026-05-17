@@ -10,7 +10,7 @@ import type { MarkerType } from "../dashbord/GoogleMapCluster";
 import { useLivePositions } from "../hooks/useLivePositions";
 import { useAnimationTick } from "../hooks/useAnimationTick";
 import { interpolatePosition } from "../utils/deadReckoning";
-import { shouldFreezeMarker } from "../utils/signalBlending";
+import { classifyMarker, shouldExtrapolate } from "../utils/signalBlending";
 
 const LiveLocation = () => {
     const dispatch = useDispatch();
@@ -114,28 +114,21 @@ const LiveLocation = () => {
         return positions
             .filter((p) => visibleDeviceIds.has(String(p.device_id)))
             .map((p) => {
-                const freeze = shouldFreezeMarker(p);
-                const interp = freeze
-                    ? {
-                          lat: p.lat,
-                          lng: p.lng,
-                          ageSeconds: Math.max(0, (now - new Date(p.recorded_at).getTime()) / 1000),
-                          isStale: false,
-                          isFrozen: true,
-                      }
-                    : interpolatePosition(p, now);
+                const state = classifyMarker(p, now);
+                const coords = shouldExtrapolate(state)
+                    ? interpolatePosition(p, now)
+                    : { lat: p.lat, lng: p.lng };
                 const dev = deviceById.get(String(p.device_id));
                 return {
                     id: p.id,
-                    lat: interp.lat,
-                    lng: interp.lng,
+                    lat: coords.lat,
+                    lng: coords.lng,
                     date: p.recorded_at,
                     speed: p.speed_kph ?? 0,
                     label: dev
                         ? `${dev.terminal_id}${dev.model ? ` (${dev.model})` : ""}`
                         : `device ${p.device_id}`,
-                    isStale: interp.isStale,
-                    isFrozen: interp.isFrozen,
+                    state,
                 };
             });
     }, [positions, visibleDeviceIds, deviceById, now]);

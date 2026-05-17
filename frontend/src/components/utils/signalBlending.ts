@@ -1,45 +1,46 @@
 import type { Position } from "../store/positionSlice";
+import {
+  WIRED_STALE_SECONDS,
+  WIRED_OFFLINE_SECONDS,
+  ASSET_TRACKER_STALE_SECONDS,
+  ASSET_TRACKER_OFFLINE_SECONDS,
+} from "./constants";
+import type { MarkerState } from "./constants";
 
-// Decide whether to freeze a marker in place (skip dead reckoning) based on
-// telemetry signals from the device. These hints override the speed/heading
-// math when the device is reporting "I'm sitting still" by other channels.
+// Classify a position into a marker state. The decision tree differs per
+// device_type because magnetic-battery / asset-tracker units don't have an
+// engine line and report statusBits=0 in their normal stationary state.
 //
-// Mobicom JT/T 808 V2.2 statusBits layout (from
-// backend/ingestion/utils/statusParser.js, the source of truth):
-//   bit 0 = ACC. set → ACC ON; cleared → ACC OFF.
-//   bit 1 = GPS fix valid.
-// Note: the Stage 3b task spec described bit-0-SET as "ACC off"; that's
-// inverted from the parser and from the spec. We follow the parser here —
-// freeze when ACC is OFF (bit 0 cleared), not when it is set.
-export function shouldFreezeMarker(position: Position): boolean {
-  const t = position.telemetry ?? {};
+// Mobicom JT/T 808 V2.2 statusBits (matches the parser at
+// backend/ingestion/utils/statusParser.js):
+//   bit 0 → ACC ON when set, ACC OFF when cleared.
+export function classifyMarker(position: Position, now: number): MarkerState {
+  const ageSeconds = Math.max(
+    0,
+    (now - new Date(position.recorded_at).getTime()) / 1000
+  );
+  const speed = position.speed_kph ?? 0;
+  const isWired = position.device_type === "WIRED";
 
-  // Explicit accelerometer hint: payload like { accelerometer: { x, y, z } }
-  // with all-zero values means the unit is not vibrating → stationary.
-  const accel = t["accelerometer"] as
-    | { x?: number; y?: number; z?: number }
-    | undefined;
-  if (
-    accel &&
-    typeof accel === "object" &&
-    accel.x === 0 &&
-    accel.y === 0 &&
-    accel.z === 0
-  ) {
-    return true;
+  if (isWired) {
+    const statusBits = position.telemetry?.["statusBits"];
+    const accOn = typeof statusBits === "number" ? (statusBits & 0b1) !== 0 : true;
+
+    if (ageSeconds > WIRED_OFFLINE_SECONDS) return "OFFLINE";
+    if (!accOn) return "OFFLINE";
+    if (ageSeconds > WIRED_STALE_SECONDS) return "DELAYED";
+    return speed > 0 ? "ACTIVE_MOVING" : "ACTIVE_IDLE";
   }
 
-  // ACC OFF (engine off) → don't extrapolate.
-  const statusBits = t["statusBits"];
-  if (typeof statusBits === "number") {
-    const accOn = (statusBits & 0b1) !== 0;
-    if (!accOn) return true;
-  }
+  // MAGNETIC_BATTERY / ASSET_TRACKER (and anything we add later without an
+  // engine signal): ignore ACC bit entirely. Movement is the only motion cue.
+  if (ageSeconds > ASSET_TRACKER_OFFLINE_SECONDS) return "OFFLINE";
+  if (ageSeconds > ASSET_TRACKER_STALE_SECONDS) return "DELAYED";
+  return speed > 0 ? "ACTIVE_MOVING" : "STATIONARY";
+}
 
-  // Reported speed is exactly 0 → we'd return the original lat/lng anyway, but
-  // we declare it here so callers can distinguish "frozen by signal" from
-  // "frozen by zero speed" if they need to.
-  if (position.speed_kph === 0) return true;
-
-  return false;
+// Dead reckoning only animates ACTIVE_MOVING markers; everything else stays
+// pinned to its source coordinates.
+export function shouldExtrapolate(state: MarkerState): boolean {
+  return state === "ACTIVE_MOVING";
 }

@@ -9,6 +9,8 @@ import {
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MARKER_COLORS, MARKER_LABELS } from "../utils/constants";
+import type { MarkerState } from "../utils/constants";
 
 /* ================= TYPES ================= */
 
@@ -19,10 +21,8 @@ export interface MarkerType {
   date?: string;
   speed?: number;
   label?: string;
-  // Stage 3b: visual confidence decay. isStale = data >60s old (yellow tint),
-  // isFrozen = data >120s old or signal-blended stationary (red tint).
-  isStale?: boolean;
-  isFrozen?: boolean;
+  // Stage 3b refinement: device-type-aware state.
+  state: MarkerState;
 }
 
 interface MapProps {
@@ -31,7 +31,7 @@ interface MapProps {
 
 /* ================= DEFAULT CENTER (PUNJAB) ================= */
 
-const defaultCenter: [number, number] = [30.9, 75.85]; // Covers Ludhiana & Moga
+const defaultCenter: [number, number] = [30.9, 75.85];
 
 /* ================= FIX LEAFLET ICON ================= */
 
@@ -48,13 +48,9 @@ L.Icon.Default.mergeOptions({
 
 /* ================= STATE-COLORED DIV ICON ================= */
 
-const COLOR_FRESH = "#28a745";
-const COLOR_STALE = "#ffc107";
-const COLOR_FROZEN = "#dc3545";
-
-const buildIcon = (isStale: boolean, isFrozen: boolean): L.DivIcon => {
-  const color = isFrozen ? COLOR_FROZEN : isStale ? COLOR_STALE : COLOR_FRESH;
-  const opacity = isFrozen ? 0.6 : isStale ? 0.8 : 1;
+const buildIcon = (state: MarkerState): L.DivIcon => {
+  const color = MARKER_COLORS[state];
+  const opacity = state === "OFFLINE" ? 0.6 : state === "DELAYED" ? 0.85 : 1;
   return L.divIcon({
     className: "truck-marker",
     html: `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5);opacity:${opacity}"></div>`,
@@ -85,12 +81,13 @@ const FitBoundsOnce: React.FC<{ markers: MarkerType[] }> = ({ markers }) => {
 /* ================= COMPONENT ================= */
 
 const GoogleMapCluster: React.FC<MapProps> = ({ markers = [] }) => {
-  // Cache icons so identical states share one icon instance.
   const icons = useMemo(
     () => ({
-      fresh: buildIcon(false, false),
-      stale: buildIcon(true, false),
-      frozen: buildIcon(false, true),
+      ACTIVE_MOVING: buildIcon("ACTIVE_MOVING"),
+      ACTIVE_IDLE: buildIcon("ACTIVE_IDLE"),
+      STATIONARY: buildIcon("STATIONARY"),
+      DELAYED: buildIcon("DELAYED"),
+      OFFLINE: buildIcon("OFFLINE"),
     }),
     []
   );
@@ -110,11 +107,7 @@ const GoogleMapCluster: React.FC<MapProps> = ({ markers = [] }) => {
 
       <MarkerClusterGroup chunkedLoading>
         {markers.map((marker) => {
-          const icon = marker.isFrozen
-            ? icons.frozen
-            : marker.isStale
-            ? icons.stale
-            : icons.fresh;
+          const icon = icons[marker.state];
           return (
             <Marker
               key={marker.id}
@@ -137,12 +130,7 @@ const GoogleMapCluster: React.FC<MapProps> = ({ markers = [] }) => {
                     ? new Date(marker.date).toLocaleTimeString()
                     : "N/A"}{" "}
                   <br />
-                  <strong>Status:</strong>{" "}
-                  {marker.isFrozen
-                    ? "Frozen (stale > 2 min)"
-                    : marker.isStale
-                    ? "Stale (no update > 1 min)"
-                    : "Live"}
+                  <strong>Status:</strong> {MARKER_LABELS[marker.state]}
                 </div>
               </Popup>
             </Marker>
