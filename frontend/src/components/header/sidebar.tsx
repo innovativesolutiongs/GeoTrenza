@@ -6,6 +6,7 @@ import {
   Cpu,
   MapPin,
   Settings,
+  Bell,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -84,6 +85,17 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, toggleSidebar }) => {
             <NavigationItem icon={Cpu} title="Gateways" href="/gateways" />
           </>
         )}
+
+        {/* Stage 3d Phase 1: alert framework UI */}
+        <NavigationItem
+          icon={Bell}
+          title="Alerts"
+          dropdownItems={[
+            { label: "Active alerts", href: "/alerts" },
+            { label: "Rules", href: "/alert-rules" },
+            { label: "My subscriptions", href: "/alert-subscriptions" },
+          ]}
+        />
 
         <NavigationItem
           icon={Settings}
