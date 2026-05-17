@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 
 import { fetchDevices } from "../store/deviceSlice";
 import { userLogout, signoutUser } from "../store/loginSlice";
+import AlertBell from "./AlertBell";
 
 interface HeaderProps {
   searchEmployee: string;
@@ -134,6 +135,9 @@ const HeaderPage: React.FC<HeaderProps> = ({
           </ul>
         )}
       </div>
+
+      {/* Alert bell — polls /api/alerts?status=ACTIVE every 30s */}
+      <AlertBell />
 
       {/* User Dropdown */}
       <div className="dropdown position-relative">
