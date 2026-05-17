@@ -6,6 +6,8 @@ import accountcreateRouter from "./routes/accountcreateRouter";
 import truckRouter from "./routes/truckRouter";
 import devicesRouter from "./routes/deviceRoutes";
 import allocationRouter from "./routes/allocationRouter";
+import positionRouter from "./routes/positionRoutes";
+import eventRouter from "./routes/eventRoutes";
 
 
 
@@ -91,9 +93,11 @@ AppDataSource.initialize()
     app.use("/api", employeeRoutes);
     app.use("/api", changepasswordRoutes);
     app.use("/api/customer", accountcreateRouter);
-    app.use("/api/trucks", stage1GapMiddleware, truckRouter);
-    app.use("/api/devices", stage1GapMiddleware, devicesRouter);
+    app.use("/api/trucks", truckRouter);
+    app.use("/api/devices", devicesRouter);
     app.use("/api/allocation", stage1GapMiddleware, allocationRouter);
+    app.use("/api/positions", positionRouter);
+    app.use("/api/events", eventRouter);
 
 
 
