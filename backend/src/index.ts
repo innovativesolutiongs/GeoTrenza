@@ -43,11 +43,16 @@ const stage1GapMiddleware = (
 // Middleware
 // --------------------
 
-// CORS configuration to allow credentials
+// CORS — Stage 3 pre-launch: reflect any Origin so local dev, production
+// dashboard, and ad-hoc curl all work. CORS_ORIGIN env var lets us lock it
+// down per environment later (Stage 4 will pin to the production domain).
+const corsOrigin: any = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : true;
 app.use(
   cors({
-    origin: "http://localhost:5173", // your frontend URL
-    credentials: true, // allow cookies or Authorization headers
+    origin: corsOrigin,
+    credentials: true,
   })
 );
 
