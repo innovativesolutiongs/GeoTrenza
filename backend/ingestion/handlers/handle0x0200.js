@@ -3,6 +3,7 @@ const buildPositionRow = require('../utils/buildPositionRow');
 const detectOneShotEvents = require('../utils/detectOneShotEvents');
 const executeTransaction = require('../utils/executeTransaction');
 const resolveDeviceId = require('../utils/resolveDeviceId');
+const invokeAlertEngine = require('../utils/invokeAlertEngine');
 const { categorizeError } = require('../errors/errorCategories');
 const ParseError = require('../errors/ParseError');
 
@@ -29,6 +30,23 @@ async function handle0x0200(packetHex, connState, deps) {
     } else {
       deviceId = await resolveDeviceId(packetData.terminalId, deviceRepo);
       connState.deviceId = deviceId;
+      // Cache account_id + vehicle_id on the connection state for the alert
+      // engine hook. Best-effort: a failure here MUST NOT block the packet ACK,
+      // so we swallow exceptions and leave the fields null. The hook treats
+      // null accountId as "unassigned device, skip rules eval".
+      try {
+        if (typeof deviceRepo.findOne === 'function') {
+          const dRow = await deviceRepo.findOne({
+            where: { id: deviceId },
+            select: ['id', 'account_id', 'vehicle_id'],
+          });
+          connState.accountId = dRow && dRow.account_id ? String(dRow.account_id) : null;
+          connState.vehicleId = dRow && dRow.vehicle_id ? String(dRow.vehicle_id) : null;
+        }
+      } catch (_e) {
+        connState.accountId = null;
+        connState.vehicleId = null;
+      }
     }
   } catch (err) {
     return handleError(err, deps, serialNo, originalMsgId, connState);
@@ -62,6 +80,22 @@ async function handle0x0200(packetHex, connState, deps) {
       packet_size_bytes: Math.floor(packetHex.length / 2),
       event_count_emitted: events.length,
       transaction_duration_ms: Date.now() - txStart,
+    });
+    // Stage 3d Phase 1: fire-and-forget alert engine hook. Errors are
+    // swallowed inside the hook so a rules-table outage CANNOT block the
+    // packet ACK. Returns void; we don't await before sending the ACK.
+    invokeAlertEngine({
+      dataSource,
+      deviceId,
+      accountId: connState.accountId,
+      vehicleId: connState.vehicleId,
+      positionRow,
+      events,
+      logger: deps.logger,
+    }).catch((err) => {
+      deps.logger.warn('alert_engine_unexpected_throw', {
+        deviceId, message: err && err.message,
+      });
     });
     return buildAck(serialNo, originalMsgId, 0);
   } catch (err) {
