@@ -17,7 +17,7 @@ import Createcustomermaster from "../customer/createcustomer";
 import EditcustomerMaster from "../customer/Editcustomer";
 import EditDeviceMaster from "../DeviceMaster/Editdevice";
 import Livelocation from "../Locations/livelocation";
-import TruckRoutes from "../Locations/truckroutes";
+import TruckDetail from "../trucks/TruckDetail";
 import ProtectedRoute from './protectedRoute';
 import CommingSoon from '../coming-soon';
 
@@ -97,8 +97,8 @@ const router = createBrowserRouter([
           },
 
           {
-            path: 'truckroutes',
-            element: <TruckRoutes />, // Displayed within Layout
+            path: 'trucks/:id',
+            element: <TruckDetail />, // Displayed within Layout
           },
 
           {
