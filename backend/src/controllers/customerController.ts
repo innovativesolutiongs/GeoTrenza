@@ -55,24 +55,13 @@ export const createCustomer = async (req: Request, res: Response) => {
       .getOne();
     if (dupe) return res.status(400).json({ message: "A customer with this email already exists" });
 
-    const now = new Date();
+    // Stage 3e cleanup: legacy v1 columns made nullable in migration
+    // 1779500000000. Only `title` is still populated (mirrors company_name)
+    // so the existing legacy login page renders something. Drop title +
+    // remaining v1 columns in Stage 4 once we confirm no readers.
     const a = accountRepo().create({
-      // v1 columns we have to fill (NOT NULL with no default in legacy schema):
-      code: company_name.slice(0, 20),
       title: company_name,
-      dotNo: "", mcNo: "", address: address_line1 ?? "",
-      stateName: 0, cityName: 0, zipCode: 0,
-      shpAddress: "", shpStateName: 0, shpCityName: 0, shpZipCode: 0,
-      phoneNo: phone, emailID: email, nemailID: "",
-      firstName: owner_name, lastName: "", dlNo: "",
-      totT: 0, totD: 0, totS: 0, batchID: 0,
-      teamID: "", assignTo: "",
-      planID: 0, elogID: 2, elogKey: "",
-      chkConfim: 0, appActiveID: 2, wapActiveID: 2,
-      mayaPlanID: 0, planTypeID: 0, rowID: 0,
-      imageFile: "", userID: 0, companyID: 0,
-      statusID: 1, logID: now,
-      // Stage 3e columns:
+      statusID: 1,
       email, phone, owner_name, company_name,
       pricing_tier: pricing_tier ?? "Basic",
       billing_email: billing_email ?? null,
@@ -88,18 +77,18 @@ export const createCustomer = async (req: Request, res: Response) => {
     // Auto-create the CUSTOMER_ADMIN user.
     const plain = generatePassword();
     const hash = await bcrypt.hash(plain, 12);
+    // The legacy `users` table has many v1 columns that are still NOT NULL
+    // on production (we only loosened `accounts`). Keep filling the bare
+    // minimum until Stage 4 also nullable-fies `users`.
     const u = userRepo().create({
-      // legacy NOT NULL columns:
-      companyID: 0, customerID: Number(savedAccount.ID), staffID: 0, etypeID: 1,
-      uroleID: 0, suroleID: 0, empID: 0,
-      username: email.slice(0, 20), fname: owner_name, lname: "",
-      email, mobileno: phone ?? "", password: "", pstexts: "",
-      userTY: "CA", tokenAN: null as any, tokenAP: null as any, fcmID: "",
-      chkSupv: 0, is_online: 0, extension: 0,
-      telnyx_user_id: "", telnyx_conn_id: "",
-      // Stage 3e:
-      password_hash: hash, role: "CUSTOMER_ADMIN",
-      last_login_at: null, deleted_at: null,
+      customerID: Number(savedAccount.ID),
+      username: email.slice(0, 20),
+      fname: owner_name,
+      email,
+      mobileno: phone ?? "",
+      userTY: "CA",
+      password_hash: hash,
+      role: "CUSTOMER_ADMIN",
     } as any);
     const savedUser = (await userRepo().save(u)) as unknown as User;
 
@@ -198,16 +187,13 @@ export const createUser = async (req: Request, res: Response) => {
     const plain = generatePassword();
     const hash = await bcrypt.hash(plain, 12);
     const u = userRepo().create({
-      companyID: 0, customerID: Number(account_id), staffID: 0, etypeID: 1,
-      uroleID: 0, suroleID: 0, empID: 0,
-      username: email.slice(0, 20), fname: name, lname: "",
-      email, mobileno: "", password: "", pstexts: "",
+      customerID: Number(account_id),
+      username: email.slice(0, 20),
+      fname: name,
+      email,
       userTY: finalRole === "GEOTRENZA_ADMIN" ? "AD" : "CA",
-      tokenAN: null as any, tokenAP: null as any, fcmID: "",
-      chkSupv: 0, is_online: 0, extension: 0,
-      telnyx_user_id: "", telnyx_conn_id: "",
-      password_hash: hash, role: finalRole,
-      last_login_at: null, deleted_at: null,
+      password_hash: hash,
+      role: finalRole,
     } as any);
     const saved = (await userRepo().save(u)) as unknown as User;
     res.status(201).json({ user: { id: saved.ID, email: saved.email, role: finalRole }, generated_password: plain });
