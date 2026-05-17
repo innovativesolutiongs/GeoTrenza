@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import type { RootState } from "../store";
-import { fetchAllocations } from "../store/allocationslice";
-import { fetchCustomers } from "../store/customerSlice";
 import { fetchTrucks } from "../store/truckSlice";
 import { fetchDevices } from "../store/deviceSlice";
 import GoogleMapCluster from "../dashbord/GoogleMapCluster";
@@ -11,178 +10,212 @@ import { useLivePositions } from "../hooks/useLivePositions";
 import { useAnimationTick } from "../hooks/useAnimationTick";
 import { interpolatePosition } from "../utils/deadReckoning";
 import { classifyMarker, shouldExtrapolate } from "../utils/signalBlending";
+import type { MarkerState } from "../utils/constants";
+import TruckCard from "../shared/TruckCard";
+import type { TruckCardData } from "../shared/TruckCard";
+import UniversalSearchBar from "../shared/UniversalSearchBar";
+
+const SIDEBAR_OPEN_W = 320;
+const SIDEBAR_COLLAPSED_W = 64;
 
 const LiveLocation = () => {
     const dispatch = useDispatch();
+    const navigate = useNavigate();
 
-    const allocations = useSelector(
-        (state: RootState) => state.allocation.items || []
-    );
-
-    const customersList = useSelector(
-        (state: RootState) => state.customers.items || []
-    );
-
-    const trucks = useSelector(
-        (state: RootState) => state.truck.trucks || []
-    );
-
-    const devices = useSelector(
-        (state: RootState) => state.device.devices || []
-    );
-
-    const user = useSelector((state: any) => state.login.userInfo);
-    const compID = user?.compID;
-
-    const [selectedCustomer, setSelectedCustomer] = useState("");
-    const [selectedTruck, setSelectedTruck] = useState("");
-    const [filteredTrucks, setFilteredTrucks] = useState<any[]>([]);
+    const trucks = useSelector((s: RootState) => s.truck.trucks);
+    const devices = useSelector((s: RootState) => s.device.devices);
 
     useEffect(() => {
-        if (compID) {
-            dispatch(fetchCustomers(compID) as any);
-        }
-        dispatch(fetchAllocations() as any);
         dispatch(fetchTrucks() as any);
         dispatch(fetchDevices() as any);
-    }, [dispatch, compID]);
-
-    // Filter trucks by customer via allocation.
-    useEffect(() => {
-        if (!selectedCustomer) {
-            setFilteredTrucks([]);
-            setSelectedTruck("");
-            return;
-        }
-        const allocationTruckIDs = allocations
-            .filter((item: any) => Number(item.customerID) === Number(selectedCustomer))
-            .map((item: any) => String(item.truckID));
-        const matched = trucks.filter((t: any) =>
-            allocationTruckIDs.includes(String(t.id))
-        );
-        setFilteredTrucks(matched);
-        setSelectedTruck("");
-    }, [selectedCustomer, allocations, trucks]);
-
-    /* ================= LIVE POSITIONS ================= */
+    }, [dispatch]);
 
     const { positions } = useLivePositions();
     const now = useAnimationTick();
 
-    // Map truck → device(s) via devices.truck_id.
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [query, setQuery] = useState("");
+
+    // Index: truck.id → devices on truck.
     const devicesByTruckId = useMemo(() => {
-        const map = new Map<string, any[]>();
+        const m = new Map<string, any[]>();
         for (const d of devices) {
             if (!d.truck_id) continue;
             const k = String(d.truck_id);
-            const arr = map.get(k) ?? [];
+            const arr = m.get(k) ?? [];
             arr.push(d);
-            map.set(k, arr);
+            m.set(k, arr);
         }
-        return map;
+        return m;
     }, [devices]);
 
-    const deviceById = useMemo(() => {
-        const map = new Map<string, any>();
-        for (const d of devices) map.set(String(d.id), d);
-        return map;
-    }, [devices]);
+    // Latest position per device (we already get DISTINCT ON from backend, but
+    // be defensive).
+    const positionByDeviceId = useMemo(() => {
+        const m = new Map<string, any>();
+        for (const p of positions) {
+            const k = String(p.device_id);
+            const prev = m.get(k);
+            if (!prev || new Date(p.recorded_at) > new Date(prev.recorded_at)) {
+                m.set(k, p);
+            }
+        }
+        return m;
+    }, [positions]);
 
-    // Which device_ids to render? Depends on dropdown state.
-    const visibleDeviceIds = useMemo<Set<string>>(() => {
-        // No customer selected → show everything the user could see.
-        if (!selectedCustomer) {
-            return new Set(positions.map((p) => String(p.device_id)));
-        }
-        // Customer selected, truck selected → only that truck's devices.
-        if (selectedTruck) {
-            return new Set(
-                (devicesByTruckId.get(String(selectedTruck)) ?? []).map((d) => String(d.id))
-            );
-        }
-        // Customer selected, no specific truck → all devices on this customer's trucks.
-        const truckIds = new Set(filteredTrucks.map((t: any) => String(t.id)));
-        const ids = new Set<string>();
-        for (const [tid, devs] of devicesByTruckId.entries()) {
-            if (!truckIds.has(tid)) continue;
-            for (const d of devs) ids.add(String(d.id));
-        }
-        return ids;
-    }, [positions, selectedCustomer, selectedTruck, filteredTrucks, devicesByTruckId]);
+    // Combine truck + its newest position into a TruckCardData (the view model
+    // the card renders).
+    type Entry = {
+        truck: any;
+        data: TruckCardData;
+        position: any | null;
+        state: MarkerState;
+    };
+    const entries: Entry[] = useMemo(() => {
+        return trucks.map((t: any) => {
+            const devs = devicesByTruckId.get(String(t.id)) ?? [];
+            let newest: any = null;
+            for (const d of devs) {
+                const p = positionByDeviceId.get(String(d.id));
+                if (!p) continue;
+                if (!newest || new Date(p.recorded_at) > new Date(newest.recorded_at)) newest = p;
+            }
+            const state: MarkerState = newest ? classifyMarker(newest, now) : "OFFLINE";
+            const data: TruckCardData = {
+                id: String(t.id),
+                name: t.name,
+                registration_no: t.registration_no,
+                state,
+                lastUpdate: newest?.received_at ?? newest?.recorded_at ?? null,
+                lat: newest?.lat ?? null,
+                lng: newest?.lng ?? null,
+                speedKph: newest?.speed_kph ?? null,
+                batteryPercent: null, // Stage 4: parse 0xEE TLV into a real %
+            };
+            return { truck: t, data, position: newest, state };
+        });
+    }, [trucks, devicesByTruckId, positionByDeviceId, now]);
 
+    // Filter sidebar list by the in-place query from UniversalSearchBar.
+    const filteredEntries = useMemo(() => {
+        if (!query.trim()) return entries;
+        const q = query.toLowerCase();
+        return entries.filter(({ truck }) =>
+            (truck.name ?? "").toLowerCase().includes(q) ||
+            truck.registration_no.toLowerCase().includes(q)
+        );
+    }, [entries, query]);
+
+    // Sort by most recent update (null last_seen falls to the bottom).
+    const sortedEntries = useMemo(() => {
+        const score = (e: Entry) =>
+            e.data.lastUpdate ? new Date(e.data.lastUpdate).getTime() : 0;
+        return [...filteredEntries].sort((a, b) => score(b) - score(a));
+    }, [filteredEntries]);
+
+    // Build map markers from the entries (one per truck — uses the truck's
+    // newest position). Devices not assigned to a truck are dropped from the
+    // map for Stage 3c; they'll surface via the universal search instead.
     const markers: MarkerType[] = useMemo(() => {
-        return positions
-            .filter((p) => visibleDeviceIds.has(String(p.device_id)))
-            .map((p) => {
-                const state = classifyMarker(p, now);
-                const coords = shouldExtrapolate(state)
-                    ? interpolatePosition(p, now)
-                    : { lat: p.lat, lng: p.lng };
-                const dev = deviceById.get(String(p.device_id));
-                return {
-                    id: p.id,
-                    lat: coords.lat,
-                    lng: coords.lng,
-                    date: p.recorded_at,
-                    speed: p.speed_kph ?? 0,
-                    label: dev
-                        ? `${dev.terminal_id}${dev.model ? ` (${dev.model})` : ""}`
-                        : `device ${p.device_id}`,
-                    state,
-                };
-            });
-    }, [positions, visibleDeviceIds, deviceById, now]);
+        const out: MarkerType[] = [];
+        for (const e of entries) {
+            if (!e.position) continue;
+            const state = e.state;
+            const coords = shouldExtrapolate(state)
+                ? interpolatePosition(e.position, now)
+                : { lat: e.position.lat, lng: e.position.lng };
+            out.push({
+                id: e.truck.id,
+                lat: coords.lat,
+                lng: coords.lng,
+                date: e.position.recorded_at,
+                speed: e.position.speed_kph ?? 0,
+                label: e.data.name ?? e.data.registration_no,
+                state,
+            } as MarkerType & { __truckId: string });
+        }
+        return out;
+    }, [entries, now]);
+
+    const activeCount = entries.filter((e) =>
+        e.state === "ACTIVE_MOVING" || e.state === "ACTIVE_IDLE" || e.state === "STATIONARY"
+    ).length;
+    const offlineCount = entries.filter((e) => e.state === "OFFLINE").length;
 
     return (
-        <div className="card shadow p-4">
-            <h4 className="mb-4">Live Location</h4>
-
-            <div className="row g-3">
-                <div className="col-md-6">
-                    <label className="form-label">Customer</label>
-                    <select
-                        className="form-select"
-                        value={selectedCustomer}
-                        onChange={(e) => setSelectedCustomer(e.target.value)}
+        <div style={{ display: "flex", height: "calc(100vh - 60px)", background: "#f4f6f9" }}>
+            {/* === Sidebar === */}
+            <div style={{
+                width: sidebarOpen ? SIDEBAR_OPEN_W : SIDEBAR_COLLAPSED_W,
+                background: "#ffffff",
+                borderRight: "1px solid #e5e7eb",
+                display: "flex",
+                flexDirection: "column",
+                transition: "width 150ms",
+                overflow: "hidden",
+            }}>
+                {/* Header / collapse toggle */}
+                <div style={{
+                    padding: sidebarOpen ? "12px 14px" : "12px 8px",
+                    borderBottom: "1px solid #e5e7eb",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    justifyContent: sidebarOpen ? "space-between" : "center",
+                }}>
+                    {sidebarOpen && <strong style={{ fontSize: 14 }}>Fleet</strong>}
+                    <button
+                        onClick={() => setSidebarOpen((o) => !o)}
+                        title={sidebarOpen ? "Collapse" : "Expand"}
+                        style={{
+                            border: "none", background: "transparent",
+                            cursor: "pointer", fontSize: 16, color: "#6b7280",
+                        }}
                     >
-                        <option value="">All Customers</option>
-                        {customersList.map((c: any) => (
-                            <option key={c.ID} value={c.ID}>
-                                {c.title}
-                            </option>
-                        ))}
-                    </select>
+                        {sidebarOpen ? "‹" : "›"}
+                    </button>
                 </div>
 
-                <div className="col-md-6">
-                    <label className="form-label">Truck</label>
-                    <select
-                        className="form-select"
-                        value={selectedTruck}
-                        onChange={(e) => setSelectedTruck(e.target.value)}
-                        disabled={!selectedCustomer}
-                    >
-                        <option value="">All Trucks</option>
-                        {filteredTrucks.map((truck: any) => (
-                            <option key={truck.id} value={truck.id}>
-                                {truck.name ?? truck.registration_no}
-                            </option>
-                        ))}
-                    </select>
+                {/* Search bar — only when open */}
+                {sidebarOpen && (
+                    <div style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                        <UniversalSearchBar onQueryChange={setQuery} placeholder="Filter trucks…" />
+                        <div style={{ marginTop: 6, fontSize: 11, color: "#6b7280" }}>
+                            {entries.length} {entries.length === 1 ? "truck" : "trucks"} ·{" "}
+                            <span style={{ color: "#16a34a" }}>{activeCount} active</span>
+                            {offlineCount > 0 && (
+                                <>, <span style={{ color: "#dc2626" }}>{offlineCount} offline</span></>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Truck list */}
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                    {sortedEntries.length === 0 ? (
+                        <div style={{ padding: 16, color: "#9ca3af", fontSize: 13 }}>
+                            {trucks.length === 0 ? "No trucks yet" : "No matches"}
+                        </div>
+                    ) : (
+                        sortedEntries.map((e) => (
+                            <TruckCard
+                                key={e.truck.id}
+                                data={e.data}
+                                now={now}
+                                compact={!sidebarOpen}
+                                onClick={() => navigate(`/trucks/${e.truck.id}`)}
+                                onHoverChange={(h) => setHoveredId(h ? String(e.truck.id) : null)}
+                                isHighlighted={hoveredId === String(e.truck.id)}
+                            />
+                        ))
+                    )}
                 </div>
             </div>
-            <br />
 
-            <div className="card">
-                <div className="card-header d-flex justify-content-between align-items-center">
-                    <h5 className="mb-0">Live Locations</h5>
-                    <small className="text-muted">
-                        {markers.length} {markers.length === 1 ? "vehicle" : "vehicles"} live
-                    </small>
-                </div>
-                <div className="card-body">
-                    <GoogleMapCluster markers={markers} />
-                </div>
+            {/* === Map === */}
+            <div style={{ flex: 1, position: "relative" }}>
+                <GoogleMapCluster markers={markers} />
             </div>
         </div>
     );
