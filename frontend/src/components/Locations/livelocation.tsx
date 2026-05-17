@@ -1,23 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { RootState } from "../store";
 import { fetchAllocations } from "../store/allocationslice";
 import { fetchCustomers } from "../store/customerSlice";
 import { fetchTrucks } from "../store/truckSlice";
-import GoogleMapCluster from "../dashbord/GoogleMapCluster"; // Adjust path
-// Example markers for the map
-const markersData = [
-    { id: 1, lat: 28.6139, lng: 77.209 }, // Delhi
-    { id: 2, lat: 19.076, lng: 72.8777 }, // Mumbai
-    { id: 3, lat: 13.0827, lng: 80.2707 }, // Chennai
-    { id: 4, lat: 22.5726, lng: 88.3639 }, // Kolkata
-    { id: 5, lat: 26.9124, lng: 75.7873 }, // Jaipur
-    { id: 6, lat: 12.9716, lng: 77.5946 }, // Bangalore
-    { id: 7, lat: 17.385, lng: 78.4867 },  // Hyderabad
-];
+import { fetchDevices } from "../store/deviceSlice";
+import GoogleMapCluster from "../dashbord/GoogleMapCluster";
+import type { MarkerType } from "../dashbord/GoogleMapCluster";
+import { useLivePositions } from "../hooks/useLivePositions";
+import { interpolatePosition } from "../utils/deadReckoning";
+import { shouldFreezeMarker } from "../utils/signalBlending";
 
-
-const AllocationForm = () => {
+const LiveLocation = () => {
     const dispatch = useDispatch();
 
     const allocations = useSelector(
@@ -32,56 +26,124 @@ const AllocationForm = () => {
         (state: RootState) => state.truck.trucks || []
     );
 
+    const devices = useSelector(
+        (state: RootState) => state.device.devices || []
+    );
+
     const user = useSelector((state: any) => state.login.userInfo);
     const compID = user?.compID;
 
     const [selectedCustomer, setSelectedCustomer] = useState("");
+    const [selectedTruck, setSelectedTruck] = useState("");
     const [filteredTrucks, setFilteredTrucks] = useState<any[]>([]);
 
-    // Load data
     useEffect(() => {
         if (compID) {
             dispatch(fetchCustomers(compID) as any);
         }
         dispatch(fetchAllocations() as any);
         dispatch(fetchTrucks() as any);
+        dispatch(fetchDevices() as any);
     }, [dispatch, compID]);
 
-    // 🔑 MAIN LOGIC
+    // Filter trucks by customer via allocation.
     useEffect(() => {
         if (!selectedCustomer) {
             setFilteredTrucks([]);
+            setSelectedTruck("");
             return;
         }
-
-        // Step 1 → get truckIDs from allocation
         const allocationTruckIDs = allocations
-            .filter(
-                (item: any) =>
-                    Number(item.customerID) === Number(selectedCustomer)
-            )
+            .filter((item: any) => Number(item.customerID) === Number(selectedCustomer))
             .map((item: any) => String(item.truckID));
-
-        console.log("🚛 TruckIDs from Allocation:", allocationTruckIDs);
-        console.log("🚚 Trucks Table:", trucks);
-
-        // Step 2 → filter trucks table using those IDs
-        const matchedTrucks = trucks.filter((truck: any) =>
-            allocationTruckIDs.includes(String(truck.id)) // IMPORTANT MATCH
+        const matched = trucks.filter((t: any) =>
+            allocationTruckIDs.includes(String(t.id))
         );
-
-        console.log("✅ Final Trucks to Show:", matchedTrucks);
-
-        setFilteredTrucks(matchedTrucks);
-
+        setFilteredTrucks(matched);
+        setSelectedTruck("");
     }, [selectedCustomer, allocations, trucks]);
+
+    /* ================= LIVE POSITIONS ================= */
+
+    const { positions } = useLivePositions();
+
+    // Map truck → device(s) via devices.truck_id.
+    const devicesByTruckId = useMemo(() => {
+        const map = new Map<string, any[]>();
+        for (const d of devices) {
+            if (!d.truck_id) continue;
+            const k = String(d.truck_id);
+            const arr = map.get(k) ?? [];
+            arr.push(d);
+            map.set(k, arr);
+        }
+        return map;
+    }, [devices]);
+
+    const deviceById = useMemo(() => {
+        const map = new Map<string, any>();
+        for (const d of devices) map.set(String(d.id), d);
+        return map;
+    }, [devices]);
+
+    // Which device_ids to render? Depends on dropdown state.
+    const visibleDeviceIds = useMemo<Set<string>>(() => {
+        // No customer selected → show everything the user could see.
+        if (!selectedCustomer) {
+            return new Set(positions.map((p) => String(p.device_id)));
+        }
+        // Customer selected, truck selected → only that truck's devices.
+        if (selectedTruck) {
+            return new Set(
+                (devicesByTruckId.get(String(selectedTruck)) ?? []).map((d) => String(d.id))
+            );
+        }
+        // Customer selected, no specific truck → all devices on this customer's trucks.
+        const truckIds = new Set(filteredTrucks.map((t: any) => String(t.id)));
+        const ids = new Set<string>();
+        for (const [tid, devs] of devicesByTruckId.entries()) {
+            if (!truckIds.has(tid)) continue;
+            for (const d of devs) ids.add(String(d.id));
+        }
+        return ids;
+    }, [positions, selectedCustomer, selectedTruck, filteredTrucks, devicesByTruckId]);
+
+    const markers: MarkerType[] = useMemo(() => {
+        const now = Date.now();
+        return positions
+            .filter((p) => visibleDeviceIds.has(String(p.device_id)))
+            .map((p) => {
+                const freeze = shouldFreezeMarker(p);
+                const interp = freeze
+                    ? {
+                          lat: p.lat,
+                          lng: p.lng,
+                          ageSeconds: Math.max(0, (now - new Date(p.recorded_at).getTime()) / 1000),
+                          isStale: false,
+                          isFrozen: true,
+                      }
+                    : interpolatePosition(p, now);
+                const dev = deviceById.get(String(p.device_id));
+                return {
+                    id: p.id,
+                    lat: interp.lat,
+                    lng: interp.lng,
+                    date: p.recorded_at,
+                    speed: p.speed_kph ?? 0,
+                    label: dev
+                        ? `${dev.terminal_id}${dev.model ? ` (${dev.model})` : ""}`
+                        : `device ${p.device_id}`,
+                    isStale: interp.isStale,
+                    isFrozen: interp.isFrozen,
+                };
+            });
+    }, [positions, visibleDeviceIds, deviceById]);
 
     return (
         <div className="card shadow p-4">
             <h4 className="mb-4">Live Location</h4>
 
             <div className="row g-3">
-                {/* Customer */}
                 <div className="col-md-6">
                     <label className="form-label">Customer</label>
                     <select
@@ -89,7 +151,7 @@ const AllocationForm = () => {
                         value={selectedCustomer}
                         onChange={(e) => setSelectedCustomer(e.target.value)}
                     >
-                        <option value="">Select Customer</option>
+                        <option value="">All Customers</option>
                         {customersList.map((c: any) => (
                             <option key={c.ID} value={c.ID}>
                                 {c.title}
@@ -98,12 +160,15 @@ const AllocationForm = () => {
                     </select>
                 </div>
 
-                {/* Truck → shows truckNo ONLY */}
                 <div className="col-md-6">
                     <label className="form-label">Truck</label>
-                    <select className="form-select" disabled={!selectedCustomer}>
-                        <option value="">Select Truck</option>
-
+                    <select
+                        className="form-select"
+                        value={selectedTruck}
+                        onChange={(e) => setSelectedTruck(e.target.value)}
+                        disabled={!selectedCustomer}
+                    >
+                        <option value="">All Trucks</option>
                         {filteredTrucks.map((truck: any) => (
                             <option key={truck.id} value={truck.id}>
                                 {truck.name ?? truck.registration_no}
@@ -113,17 +178,20 @@ const AllocationForm = () => {
                 </div>
             </div>
             <br />
-            <br />
+
             <div className="card">
-                <div className="card-header">
+                <div className="card-header d-flex justify-content-between align-items-center">
                     <h5 className="mb-0">Live Locations</h5>
+                    <small className="text-muted">
+                        {markers.length} {markers.length === 1 ? "vehicle" : "vehicles"} live
+                    </small>
                 </div>
                 <div className="card-body">
-                    <GoogleMapCluster markers={markersData} />
+                    <GoogleMapCluster markers={markers} />
                 </div>
             </div>
         </div>
     );
 };
 
-export default AllocationForm;
+export default LiveLocation;
