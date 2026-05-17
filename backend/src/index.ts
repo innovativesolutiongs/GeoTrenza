@@ -3,11 +3,12 @@ import userRoutes from "./routes/userRoutes";
 import employeeRoutes from "./routes/employeeRoutes";
 import changepasswordRoutes from "./routes/changepasswordRoutes";
 import accountcreateRouter from "./routes/accountcreateRouter";
-import truckRouter from "./routes/truckRouter";
-import devicesRouter from "./routes/deviceRoutes";
-import allocationRouter from "./routes/allocationRouter";
+import vehicleRouter from "./routes/vehicleRouter";
 import positionRouter from "./routes/positionRoutes";
 import eventRouter from "./routes/eventRoutes";
+import customerRouter from "./routes/customerRouter";
+import gatewayRouter from "./routes/gatewayRouter";
+import driverRouter from "./routes/driverRouter";
 
 
 
@@ -27,7 +28,8 @@ const PORT = process.env.PORT || 4000;
 // docs/stage-1-deployment.md.
 const STAGE_1_GAP_MODE = process.env.STAGE_1_GAP_MODE === "true";
 
-const stage1GapMiddleware = (
+// Stage 1 gap middleware retained for reference, no longer mounted (Stage 2 complete).
+const _stage1GapMiddleware = (
   req: Request,
   res: Response,
   next: NextFunction
@@ -38,6 +40,7 @@ const stage1GapMiddleware = (
     expected_recovery: "Stage 2 deployment",
   });
 };
+void _stage1GapMiddleware;
 
 // --------------------
 // Middleware
@@ -97,12 +100,17 @@ AppDataSource.initialize()
     app.use("/api", userRoutes);
     app.use("/api", employeeRoutes);
     app.use("/api", changepasswordRoutes);
-    app.use("/api/customer", accountcreateRouter);
-    app.use("/api/trucks", truckRouter);
-    app.use("/api/devices", devicesRouter);
-    app.use("/api/allocation", stage1GapMiddleware, allocationRouter);
+    app.use("/api/customer", accountcreateRouter); // legacy v1 — unchanged
+    app.use("/api/vehicles", vehicleRouter);
     app.use("/api/positions", positionRouter);
     app.use("/api/events", eventRouter);
+    // Stage 3e admin CRUD
+    app.use("/api", customerRouter); // mounts /customers, /users
+    app.use("/api/gateways", gatewayRouter);
+    app.use("/api/drivers", driverRouter);
+    // Backwards-compat aliases: existing frontend bundles still call these.
+    app.use("/api/trucks", vehicleRouter);
+    app.use("/api/devices", gatewayRouter);
 
 
 

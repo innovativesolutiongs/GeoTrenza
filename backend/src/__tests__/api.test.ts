@@ -16,7 +16,7 @@ jest.mock("../ormconfig", () => ({
 import express from "express";
 import request from "supertest";
 import devicesRouter from "../routes/deviceRoutes";
-import truckRouter from "../routes/truckRouter";
+import vehicleRouter from "../routes/vehicleRouter";
 import positionRouter from "../routes/positionRoutes";
 import eventRouter from "../routes/eventRoutes";
 
@@ -24,7 +24,8 @@ const buildApp = () => {
   const app = express();
   app.use(express.json());
   app.use("/api/devices", devicesRouter);
-  app.use("/api/trucks", truckRouter);
+  app.use("/api/trucks", vehicleRouter);
+  app.use("/api/vehicles", vehicleRouter);
   app.use("/api/positions", positionRouter);
   app.use("/api/events", eventRouter);
   return app;
@@ -100,7 +101,7 @@ describe("GET /api/devices", () => {
 
 describe("GET /api/trucks", () => {
   test("happy path returns trucks array", async () => {
-    repoMocks["Trucks"] = {
+    repoMocks["Vehicles"] = {
       find: jest.fn().mockResolvedValue([
         { id: "1", account_id: "5", registration_no: "ABC-123", status: "active" },
       ]),
@@ -112,20 +113,20 @@ describe("GET /api/trucks", () => {
   });
 
   test("empty result returns []", async () => {
-    repoMocks["Trucks"] = { find: jest.fn().mockResolvedValue([]) };
+    repoMocks["Vehicles"] = { find: jest.fn().mockResolvedValue([]) };
     const res = await request(buildApp()).get("/api/trucks");
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
 
   test("GET /api/trucks/:id with non-numeric id returns 400", async () => {
-    repoMocks["Trucks"] = { findOneBy: jest.fn() };
+    repoMocks["Vehicles"] = { findOne: jest.fn() };
     const res = await request(buildApp()).get("/api/trucks/nope");
     expect(res.status).toBe(400);
   });
 
   test("GET /api/trucks/:id missing returns 404", async () => {
-    repoMocks["Trucks"] = { findOneBy: jest.fn().mockResolvedValue(null) };
+    repoMocks["Vehicles"] = { findOne: jest.fn().mockResolvedValue(null) };
     const res = await request(buildApp()).get("/api/trucks/9999");
     expect(res.status).toBe(404);
   });
