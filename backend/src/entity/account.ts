@@ -128,4 +128,47 @@ export class Account {
 
   @Column({ name: "logID", type: "timestamptz" })
   logID: Date;
+
+  // === Stage 3e additions (customer onboarding) ===
+  @Column({ name: "email", type: "varchar", length: 255, nullable: true })
+  email: string | null;
+
+  @Column({ name: "phone", type: "varchar", length: 50, nullable: true })
+  phone: string | null;
+
+  @Column({ name: "owner_name", type: "varchar", length: 120, nullable: true })
+  owner_name: string | null;
+
+  @Column({ name: "company_name", type: "varchar", length: 255, nullable: true })
+  company_name: string | null;
+
+  @Column({ name: "pricing_tier", type: "varchar", length: 32 })
+  pricing_tier: "Basic" | "Pro" | "Enterprise";
+
+  @Column({ name: "billing_email", type: "varchar", length: 255, nullable: true })
+  billing_email: string | null;
+
+  @Column({ name: "billing_contact_name", type: "varchar", length: 120, nullable: true })
+  billing_contact_name: string | null;
+
+  @Column({ name: "address_line1", type: "varchar", length: 255, nullable: true })
+  address_line1: string | null;
+
+  @Column({ name: "address_line2", type: "varchar", length: 255, nullable: true })
+  address_line2: string | null;
+
+  @Column({ name: "city", type: "varchar", length: 120, nullable: true })
+  city: string | null;
+
+  @Column({ name: "state", type: "varchar", length: 120, nullable: true })
+  state: string | null;
+
+  @Column({ name: "postal_code", type: "varchar", length: 20, nullable: true })
+  postal_code: string | null;
+
+  @Column({ name: "country", type: "varchar", length: 120, nullable: true })
+  country: string | null;
+
+  @Column({ name: "deleted_at", type: "timestamptz", nullable: true })
+  deleted_at: Date | null;
 }

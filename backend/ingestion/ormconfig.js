@@ -6,7 +6,7 @@ const Device = require("./entities/Device");
 const CommandReply = require("./entities/CommandReply");
 const Position = require("./entities/Position");
 const Event = require("./entities/Event");
-const Truck = require("./entities/Truck");
+const Vehicle = require("./entities/Vehicle");
 const Geofence = require("./entities/Geofence");
 
 
@@ -20,7 +20,7 @@ const AppDataSource = new DataSource({
   database: process.env.DB_NAME || "gpstracker",
   synchronize: false,
   logging: false,
-  entities: [Device, CommandReply, Position, Event, Truck, Geofence],
+  entities: [Device, CommandReply, Position, Event, Vehicle, Geofence],
 });
 
 AppDataSource.initialize()

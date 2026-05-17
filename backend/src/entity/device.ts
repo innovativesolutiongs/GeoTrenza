@@ -14,8 +14,8 @@ export class Devices {
   @Column({ name: "account_id", type: "bigint", nullable: true })
   account_id: string | null;
 
-  @Column({ name: "truck_id", type: "bigint", nullable: true })
-  truck_id: string | null;
+  @Column({ name: "vehicle_id", type: "bigint", nullable: true })
+  vehicle_id: string | null;
 
   @Column({ name: "auth_code", type: "text", nullable: true })
   auth_code: string | null;
@@ -29,8 +29,20 @@ export class Devices {
   @Column({ name: "device_type", type: "varchar", length: 32 })
   device_type: "WIRED" | "MAGNETIC_BATTERY" | "ASSET_TRACKER";
 
+  @Column({ name: "inventory_status", type: "varchar", length: 32 })
+  inventory_status:
+    | "IN_STOCK"
+    | "ASSIGNED"
+    | "ACTIVE"
+    | "INACTIVE"
+    | "RETURNED"
+    | "DECOMMISSIONED";
+
   @Column({ name: "last_seen_at", type: "timestamptz", nullable: true })
   last_seen_at: Date | null;
+
+  @Column({ name: "deleted_at", type: "timestamptz", nullable: true })
+  deleted_at: Date | null;
 
   @Column({ name: "created_at", type: "timestamptz" })
   created_at: Date;

@@ -82,4 +82,17 @@ export class User {
 
   @Column({ name: "logID", type: "timestamptz", nullable: true })
   logID?: Date;
+
+  // === Stage 3e additions ===
+  @Column({ name: "password_hash", type: "varchar", length: 255, nullable: true })
+  password_hash: string | null;
+
+  @Column({ name: "role", type: "varchar", length: 32, nullable: true })
+  role: "GEOTRENZA_ADMIN" | "CUSTOMER_ADMIN" | null;
+
+  @Column({ name: "last_login_at", type: "timestamptz", nullable: true })
+  last_login_at: Date | null;
+
+  @Column({ name: "deleted_at", type: "timestamptz", nullable: true })
+  deleted_at: Date | null;
 }
