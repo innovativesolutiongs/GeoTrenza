@@ -8,6 +8,7 @@ import { fetchDevices } from "../store/deviceSlice";
 import GoogleMapCluster from "../dashbord/GoogleMapCluster";
 import type { MarkerType } from "../dashbord/GoogleMapCluster";
 import { useLivePositions } from "../hooks/useLivePositions";
+import { useAnimationTick } from "../hooks/useAnimationTick";
 import { interpolatePosition } from "../utils/deadReckoning";
 import { shouldFreezeMarker } from "../utils/signalBlending";
 
@@ -66,6 +67,7 @@ const LiveLocation = () => {
     /* ================= LIVE POSITIONS ================= */
 
     const { positions } = useLivePositions();
+    const now = useAnimationTick();
 
     // Map truck → device(s) via devices.truck_id.
     const devicesByTruckId = useMemo(() => {
@@ -109,7 +111,6 @@ const LiveLocation = () => {
     }, [positions, selectedCustomer, selectedTruck, filteredTrucks, devicesByTruckId]);
 
     const markers: MarkerType[] = useMemo(() => {
-        const now = Date.now();
         return positions
             .filter((p) => visibleDeviceIds.has(String(p.device_id)))
             .map((p) => {
@@ -137,7 +138,7 @@ const LiveLocation = () => {
                     isFrozen: interp.isFrozen,
                 };
             });
-    }, [positions, visibleDeviceIds, deviceById]);
+    }, [positions, visibleDeviceIds, deviceById, now]);
 
     return (
         <div className="card shadow p-4">

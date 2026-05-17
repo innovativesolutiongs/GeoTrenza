@@ -8,6 +8,7 @@ import { fetchCustomerAllocations } from "../store/allocationslice";
 import GoogleMapCluster from "./GoogleMapCluster";
 import type { MarkerType } from "./GoogleMapCluster";
 import { useLivePositions } from "../hooks/useLivePositions";
+import { useAnimationTick } from "../hooks/useAnimationTick";
 import { interpolatePosition } from "../utils/deadReckoning";
 import { shouldFreezeMarker } from "../utils/signalBlending";
 
@@ -45,6 +46,7 @@ const Dashboard: React.FC = () => {
   /* ================= LIVE POSITIONS ================= */
 
   const { positions } = useLivePositions();
+  const now = useAnimationTick();
 
   /* ================= FILTERED COUNTS ================= */
 
@@ -74,11 +76,10 @@ const Dashboard: React.FC = () => {
           allocatedTruckIDs.includes(String(truck.id))
         );
 
-  /* ================= MAP MARKERS — LIVE ================= */
+  /* ================= MAP MARKERS — LIVE + ANIMATED ================= */
 
-  // Build a lookup so we can label markers with terminal_id / model. The
-  // marker animation loop is added in a follow-up commit; for now we
-  // interpolate once per render based on Date.now().
+  // useAnimationTick drives `now` at requestAnimationFrame cadence; each
+  // re-render recomputes `markers` via the pure dead-reckoning math.
   const deviceById = useMemo(() => {
     const map = new Map<string, any>();
     for (const d of devices) map.set(String(d.id), d);
@@ -91,7 +92,6 @@ const Dashboard: React.FC = () => {
   }, [positions, userTY, allocatedDeviceIDs]);
 
   const markers: MarkerType[] = useMemo(() => {
-    const now = Date.now();
     return visiblePositions.map((p) => {
       const freeze = shouldFreezeMarker(p);
       const interp = freeze
@@ -115,7 +115,7 @@ const Dashboard: React.FC = () => {
         isFrozen: interp.isFrozen,
       };
     });
-  }, [visiblePositions, deviceById]);
+  }, [visiblePositions, deviceById, now]);
 
   return (
     <div className="dashboard">
