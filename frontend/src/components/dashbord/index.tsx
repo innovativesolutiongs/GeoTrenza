@@ -1,214 +1,107 @@
 import React, { useEffect, useMemo } from "react";
-import { Users, Settings } from "lucide-react";
+import { Truck, Activity, Navigation, AlertTriangle } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchDevices } from "../store/deviceSlice";
+import type { RootState } from "../store";
 import { fetchTrucks } from "../store/truckSlice";
-import { fetchCustomers } from "../store/customerSlice";
-import { fetchCustomerAllocations } from "../store/allocationslice";
-import GoogleMapCluster from "./GoogleMapCluster";
-import type { MarkerType } from "./GoogleMapCluster";
+import { fetchDevices } from "../store/deviceSlice";
 import { useLivePositions } from "../hooks/useLivePositions";
 import { useAnimationTick } from "../hooks/useAnimationTick";
-import { interpolatePosition } from "../utils/deadReckoning";
-import { classifyMarker, shouldExtrapolate } from "../utils/signalBlending";
+import { classifyMarker } from "../utils/signalBlending";
+import type { MarkerState } from "../utils/constants";
+import UniversalSearchBar from "../shared/UniversalSearchBar";
+
+interface Tile {
+  label: string;
+  value: number;
+  Icon: React.ComponentType<{ size?: number; className?: string }>;
+  color: string;
+}
 
 const Dashboard: React.FC = () => {
   const dispatch = useDispatch();
-
-  const devices = useSelector((state: any) => state.device.devices);
-  const trucks = useSelector((state: any) => state.truck.trucks);
-  const { items = [] } = useSelector((state: any) => state.customers);
-
-  const allocations = useSelector(
-    (state: any) => state.allocation?.allocations || []
-  );
-
-  const user = useSelector((state: any) => state.login.userInfo);
-  const userTY = user?.userTY;
-  const customerID = user?.customerID;
-  const compID = user.compID;
-
-  /* ================= FETCH ================= */
-
-  useEffect(() => {
-    dispatch(fetchDevices() as any);
-    dispatch(fetchTrucks() as any);
-
-    if (customerID) {
-      dispatch(fetchCustomerAllocations(customerID) as any);
-    }
-
-    if (compID) {
-      dispatch(fetchCustomers(compID) as any);
-    }
-  }, [dispatch, customerID, compID]);
-
-  /* ================= LIVE POSITIONS ================= */
-
+  const trucks = useSelector((s: RootState) => s.truck.trucks);
+  const devices = useSelector((s: RootState) => s.device.devices);
   const { positions } = useLivePositions();
   const now = useAnimationTick();
 
-  /* ================= FILTERED COUNTS ================= */
+  useEffect(() => {
+    dispatch(fetchTrucks() as any);
+    dispatch(fetchDevices() as any);
+  }, [dispatch]);
 
-  const totalCustomers = items.length;
-  const totalDevices = devices.length;
-  const totalTrucks = trucks.length;
+  // Classify each truck's newest position into a marker state, then count.
+  const counts = useMemo(() => {
+    const devicesByTruckId = new Map<string, any[]>();
+    for (const d of devices) {
+      if (!d.truck_id) continue;
+      const k = String(d.truck_id);
+      const arr = devicesByTruckId.get(k) ?? [];
+      arr.push(d);
+      devicesByTruckId.set(k, arr);
+    }
+    const positionByDeviceId = new Map<string, any>();
+    for (const p of positions) positionByDeviceId.set(String(p.device_id), p);
 
-  const activeCustomers = items.filter(
-    (c: any) => c.status === "active" || c.isActive === 1
-  ).length;
+    let total = 0, active = 0, moving = 0, offline = 0;
+    for (const t of trucks) {
+      total += 1;
+      const devs = devicesByTruckId.get(String(t.id)) ?? [];
+      let newest: any = null;
+      for (const d of devs) {
+        const p = positionByDeviceId.get(String(d.id));
+        if (!p) continue;
+        if (!newest || new Date(p.recorded_at) > new Date(newest.recorded_at)) newest = p;
+      }
+      const state: MarkerState = newest ? classifyMarker(newest, now) : "OFFLINE";
+      if (state === "OFFLINE") offline += 1;
+      else active += 1;
+      if (state === "ACTIVE_MOVING") moving += 1;
+    }
+    return { total, active, moving, offline };
+  }, [trucks, devices, positions, now]);
 
-  const allocatedDeviceIDs = allocations.map((a: any) => String(a.deviceID));
-
-  const filteredDevices =
-    userTY === "AD"
-      ? devices
-      : devices.filter((device: any) =>
-          allocatedDeviceIDs.includes(String(device.id))
-        );
-
-  const allocatedTruckIDs = allocations.map((a: any) => String(a.truckID));
-
-  const filteredTrucks =
-    userTY === "AD"
-      ? trucks
-      : trucks.filter((truck: any) =>
-          allocatedTruckIDs.includes(String(truck.id))
-        );
-
-  /* ================= MAP MARKERS — LIVE + ANIMATED ================= */
-
-  // useAnimationTick drives `now` at requestAnimationFrame cadence; each
-  // re-render recomputes `markers` via the pure dead-reckoning math.
-  const deviceById = useMemo(() => {
-    const map = new Map<string, any>();
-    for (const d of devices) map.set(String(d.id), d);
-    return map;
-  }, [devices]);
-
-  const visiblePositions = useMemo(() => {
-    if (userTY === "AD") return positions;
-    return positions.filter((p) => allocatedDeviceIDs.includes(String(p.device_id)));
-  }, [positions, userTY, allocatedDeviceIDs]);
-
-  const markers: MarkerType[] = useMemo(() => {
-    return visiblePositions.map((p) => {
-      const state = classifyMarker(p, now);
-      const coords = shouldExtrapolate(state)
-        ? interpolatePosition(p, now)
-        : { lat: p.lat, lng: p.lng };
-      const dev = deviceById.get(String(p.device_id));
-      return {
-        id: p.id,
-        lat: coords.lat,
-        lng: coords.lng,
-        date: p.recorded_at,
-        speed: p.speed_kph ?? 0,
-        label: dev ? `${dev.terminal_id}${dev.model ? ` (${dev.model})` : ""}` : `device ${p.device_id}`,
-        state,
-      };
-    });
-  }, [visiblePositions, deviceById, now]);
+  const tiles: Tile[] = [
+    { label: "Total trucks", value: counts.total, Icon: Truck, color: "#3b82f6" },
+    { label: "Active now", value: counts.active, Icon: Activity, color: "#22c55e" },
+    { label: "Moving now", value: counts.moving, Icon: Navigation, color: "#0ea5e9" },
+    { label: "Offline", value: counts.offline, Icon: AlertTriangle, color: "#ef4444" },
+  ];
 
   return (
-    <div className="dashboard">
-      {/* ================= STATS ================= */}
-
-      <div className="row g-4 mb-4">
-        {userTY === "AD" && (
-          <>
-            <div className="col-md-3">
-              <div className="card border-start border-danger border-4">
-                <div className="card-body d-flex align-items-center">
-                  <Users className="text-danger me-3" size={24} />
-                  <div>
-                    <p className="text-muted mb-1 small">Total Customers</p>
-                    <h3 className="mb-0 fw-bold">{totalCustomers}</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="card border-start border-success border-4">
-                <div className="card-body d-flex align-items-center">
-                  <Users className="text-success me-3" size={24} />
-                  <div>
-                    <p className="text-muted mb-1 small">Active Customers</p>
-                    <h3 className="mb-0 fw-bold">{activeCustomers}</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="card border-start border-warning border-4">
-                <div className="card-body d-flex align-items-center">
-                  <Settings className="text-warning me-3" size={24} />
-                  <div>
-                    <p className="text-muted mb-1 small">Total Devices</p>
-                    <h3 className="mb-0 fw-bold">{totalDevices}</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="card border-start border-primary border-4">
-                <div className="card-body d-flex align-items-center">
-                  <Settings className="text-primary me-3" size={24} />
-                  <div>
-                    <p className="text-muted mb-1 small">Total Trucks</p>
-                    <h3 className="mb-0 fw-bold">{totalTrucks}</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {userTY === "CUSTOMER" && (
-          <>
-            <div className="col-md-3">
-              <div className="card border-start border-info border-4">
-                <div className="card-body d-flex align-items-center">
-                  <Settings className="text-info me-3" size={24} />
-                  <div>
-                    <p className="text-muted mb-1 small">Active Devices</p>
-                    <h3 className="mb-0 fw-bold">{filteredDevices?.length || 0}</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="card border-start border-primary border-4">
-                <div className="card-body d-flex align-items-center">
-                  <Settings className="text-primary me-3" size={24} />
-                  <div>
-                    <p className="text-muted mb-1 small">Active Trucks</p>
-                    <h3 className="mb-0 fw-bold">{filteredTrucks?.length || 0}</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
+    <div style={{ padding: 24, background: "#f4f6f9", minHeight: "calc(100vh - 60px)" }}>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ margin: 0, marginBottom: 12, color: "#111827" }}>Fleet overview</h2>
+        <div style={{ maxWidth: 560 }}>
+          <UniversalSearchBar autoFocus placeholder="Search trucks, devices…" />
+        </div>
       </div>
 
-      {/* ================= MAP ================= */}
-
-      <div className="card">
-        <div className="card-header d-flex justify-content-between align-items-center">
-          <h5 className="mb-0">Live Devices / Trucks Routes</h5>
-          <small className="text-muted">
-            {markers.length} {markers.length === 1 ? "vehicle" : "vehicles"} live
-          </small>
-        </div>
-
-        <div className="card-body">
-          <GoogleMapCluster markers={markers} />
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+        {tiles.map(({ label, value, Icon, color }) => (
+          <div key={label} style={{
+            background: "#ffffff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            padding: 18,
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+          }}>
+            <div style={{
+              width: 44, height: 44,
+              borderRadius: 10,
+              background: `${color}22`,
+              color, display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Icon size={22} />
+            </div>
+            <div>
+              <div style={{ color: "#6b7280", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+              <div style={{ fontWeight: 700, fontSize: 26, color: "#111827" }}>{value}</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
