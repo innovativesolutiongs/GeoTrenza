@@ -12,6 +12,7 @@ module.exports = new EntitySchema({
     auth_code: { type: "text", nullable: true },
     firmware_version: { type: "text", nullable: true },
     model: { type: "text", nullable: true },
+    device_type: { type: "varchar", length: 32 },
     last_seen_at: { type: "timestamp with time zone", nullable: true },
     created_at: { type: "timestamp with time zone" },
     updated_at: { type: "timestamp with time zone" }

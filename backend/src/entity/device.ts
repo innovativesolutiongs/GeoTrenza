@@ -26,6 +26,9 @@ export class Devices {
   @Column({ name: "model", type: "text", nullable: true })
   model: string | null;
 
+  @Column({ name: "device_type", type: "varchar", length: 32 })
+  device_type: "WIRED" | "MAGNETIC_BATTERY" | "ASSET_TRACKER";
+
   @Column({ name: "last_seen_at", type: "timestamptz", nullable: true })
   last_seen_at: Date | null;
 
