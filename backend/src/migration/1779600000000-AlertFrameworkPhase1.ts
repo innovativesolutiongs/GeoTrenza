@@ -87,9 +87,11 @@ export class AlertFrameworkPhase11779600000000 implements MigrationInterface {
         CONSTRAINT "alerts_vehicle_id_fkey"
           FOREIGN KEY ("vehicle_id") REFERENCES "vehicles"("id") ON DELETE SET NULL,
         CONSTRAINT "alerts_device_id_fkey"
-          FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL,
-        CONSTRAINT "alerts_acknowledged_by_user_id_fkey"
-          FOREIGN KEY ("acknowledged_by_user_id") REFERENCES "users"("ID") ON DELETE SET NULL
+          FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL
+        -- NOTE: no FK on acknowledged_by_user_id. Production's users."ID"
+        -- has no PK/UNIQUE constraint (legacy v1 schema drift), so a FK
+        -- there fails the migration. Treating user_id as a loose reference
+        -- in code is the trade-off; Stage 4 can add the PK + FK together.
       )
     `);
     // Dashboard "active alerts by account, newest first"
@@ -118,8 +120,7 @@ export class AlertFrameworkPhase11779600000000 implements MigrationInterface {
         "updated_at"    TIMESTAMPTZ  NOT NULL DEFAULT now(),
         CONSTRAINT "alert_subscriptions_min_severity_check"
           CHECK ("min_severity" IN ('LOW','MEDIUM','HIGH','CRITICAL')),
-        CONSTRAINT "alert_subscriptions_user_id_fkey"
-          FOREIGN KEY ("user_id") REFERENCES "users"("ID") ON DELETE CASCADE,
+        -- NOTE: no FK on user_id. See alerts_acknowledged_by_user_id note.
         CONSTRAINT "alert_subscriptions_rule_id_fkey"
           FOREIGN KEY ("rule_id") REFERENCES "alert_rules"("id") ON DELETE CASCADE
       )
