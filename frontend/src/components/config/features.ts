@@ -1,3 +1,3 @@
-// Feature flags. Stage 4 flips ENABLE_MUTATIONS to true once the v2 device/truck
-// write endpoints are reintroduced (with auth). Stage 3 backend is GET-only.
-export const ENABLE_MUTATIONS = false;
+// Feature flags. Stage 3e ships full admin CRUD so mutations are on.
+// Stage 4 will replace this with role-based gating once auth is wired.
+export const ENABLE_MUTATIONS = true;
