@@ -9,6 +9,10 @@ import eventRouter from "./routes/eventRoutes";
 import customerRouter from "./routes/customerRouter";
 import gatewayRouter from "./routes/gatewayRouter";
 import driverRouter from "./routes/driverRouter";
+import alertRuleRouter from "./routes/alertRuleRouter";
+import alertRouter from "./routes/alertRouter";
+import { userScopedRouter as userSubscriptionsRouter, idScopedRouter as subscriptionByIdRouter } from "./routes/alertSubscriptionRouter";
+import geofenceRouter from "./routes/geofenceRouter";
 
 
 
@@ -108,6 +112,12 @@ AppDataSource.initialize()
     app.use("/api", customerRouter); // mounts /customers, /users
     app.use("/api/gateways", gatewayRouter);
     app.use("/api/drivers", driverRouter);
+    // Stage 3d Phase 1 alert framework
+    app.use("/api/alert-rules", alertRuleRouter);
+    app.use("/api/alerts", alertRouter);
+    app.use("/api/users/:userId/alert-subscriptions", userSubscriptionsRouter);
+    app.use("/api/alert-subscriptions", subscriptionByIdRouter);
+    app.use("/api/geofences", geofenceRouter);
     // Backwards-compat aliases: existing frontend bundles still call these.
     app.use("/api/trucks", vehicleRouter);
     app.use("/api/devices", gatewayRouter);
