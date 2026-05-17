@@ -4,8 +4,14 @@ import { useNavigate } from "react-router-dom";
 import { createDevice, resetDeviceState } from "../store/deviceSlice";
 import { toast } from "react-toastify";
 import type { DevicePayload } from "../services/deviceService";
+import { ENABLE_MUTATIONS } from "../config/features";
+import MutationsDisabledNotice from "../utils/MutationsDisabledNotice";
 
 const CreateDeviceMaster = () => {
+  if (!ENABLE_MUTATIONS) {
+    return <MutationsDisabledNotice resourceLabel="Device" backTo="/devicemaster" />;
+  }
+
   const dispatch = useDispatch();
   const navigate = useNavigate();
 

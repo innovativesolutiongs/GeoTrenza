@@ -3,6 +3,8 @@ import { useDispatch } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { updateDevice } from "../store/deviceSlice";
 import { toast } from "react-toastify";
+import { ENABLE_MUTATIONS } from "../config/features";
+import MutationsDisabledNotice from "../utils/MutationsDisabledNotice";
 
 interface DevicePayload {
     deviceNo: string;
@@ -11,6 +13,10 @@ interface DevicePayload {
 }
 
 const EditDevice: React.FC = () => {
+    if (!ENABLE_MUTATIONS) {
+        return <MutationsDisabledNotice resourceLabel="Device" backTo="/devicemaster" />;
+    }
+
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const location = useLocation();

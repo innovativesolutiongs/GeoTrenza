@@ -4,6 +4,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { updateTruck } from "../store/truckSlice";
 import type { AppDispatch } from "../store";
 import { toast } from "react-toastify";
+import { ENABLE_MUTATIONS } from "../config/features";
+import MutationsDisabledNotice from "../utils/MutationsDisabledNotice";
 
 /* ================= TYPES ================= */
 
@@ -17,6 +19,10 @@ type TruckForm = {
 /* ================= COMPONENT ================= */
 
 const EditTruck = () => {
+    if (!ENABLE_MUTATIONS) {
+        return <MutationsDisabledNotice resourceLabel="Truck" backTo="/truckmaster" />;
+    }
+
     const dispatch = useDispatch<AppDispatch>();
     const navigate = useNavigate();
     const { id } = useParams();

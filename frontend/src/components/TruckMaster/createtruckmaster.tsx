@@ -3,8 +3,14 @@ import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { createTruck, resetTruckState } from "../store/truckSlice";
 import { toast } from "react-toastify";
+import { ENABLE_MUTATIONS } from "../config/features";
+import MutationsDisabledNotice from "../utils/MutationsDisabledNotice";
 
 const CreateTruckMaster = () => {
+  if (!ENABLE_MUTATIONS) {
+    return <MutationsDisabledNotice resourceLabel="Truck" backTo="/truckmaster" />;
+  }
+
   const dispatch = useDispatch();
   const navigate = useNavigate();
 

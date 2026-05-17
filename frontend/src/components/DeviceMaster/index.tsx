@@ -5,6 +5,7 @@ import { fetchDevices, deleteDevice } from "../store/deviceSlice";
 import { fetchCustomerAllocations } from "../store/allocationslice";
 import type { Device } from "../store/deviceSlice";
 import { toast } from "react-toastify";
+import { ENABLE_MUTATIONS } from "../config/features";
 
 const DeviceMaster: React.FC = () => {
   const dispatch = useDispatch();
@@ -20,6 +21,8 @@ const DeviceMaster: React.FC = () => {
   const user = useSelector((state: any) => state.login.userInfo);
   const userTY = user?.userTY;
   const customerID = user?.customerID;
+
+  const showMutations = ENABLE_MUTATIONS && userTY === "AD";
 
   console.log("CustomerID:", customerID);
   console.log("Allocations:", allocations);
@@ -113,7 +116,7 @@ const DeviceMaster: React.FC = () => {
             View All
           </button>
 
-          {userTY === "AD" && (
+          {showMutations && (
             <button
               className="btn btn-dark"
               onClick={() => navigate("/Createdevicemaster")}
@@ -136,8 +139,8 @@ const DeviceMaster: React.FC = () => {
                   <th style={th}>Terminal ID</th>
                   <th style={th}>Model</th>
                   <th style={thCenter}>Last Seen</th>
-                  {userTY === "AD" && <th style={thCenter}>Edit</th>}
-                  {userTY === "AD" && <th style={thCenter}>Actions</th>}
+                  {showMutations && <th style={thCenter}>Edit</th>}
+                  {showMutations && <th style={thCenter}>Actions</th>}
                 </tr>
               </thead>
 
@@ -169,7 +172,7 @@ const DeviceMaster: React.FC = () => {
                           : "—"}
                       </td>
 
-                      {userTY === "AD" && (
+                      {showMutations && (
                         <>
                           <td style={tdCenter}>
                             <Link
